@@ -10,7 +10,7 @@ import_base <- read_excel('/Users/angelicefloyd/Documents/Documents/ST542_Statis
 
 #%>% rename(procedure =`Procedure (BVP, PDA PMI, other)`,weight = `Weight (kg)`, fluoro_sec = `Total fluoro time (sec)`, fluoro_min = `Total fluoro time (min)`)
 
-import_base$group <- 'control'
+
 
 
 #reading in the RADPAD data
@@ -19,10 +19,12 @@ import_treat <- read_excel('/Users/angelicefloyd/Documents/Documents/ST542_Stati
 
 #%>% rename(procedure =`Procedure (BVP, PDA PMI, other)`,weight = `Weight (kg)`, fluoro_sec = `Total fluoro time (sec)`, fluoro_min = `Total fluoro time (min)`)
 
-import_treat$group <- 'RADPAD'
+
 
 
 base_treat_import <- rbind(import_base,import_treat) %>% rename(procedure =Procedure_BVP_PDA_PMI_other ,weight = Weight_kg, fluoro_sec = Total_fluoro_time_sec, fluoro_min = `Total_fluoro_time _min`)
+
+base_treat_import$group <- ifelse(base_treat_import$RADPAD_Used == 'Y','control','treatment')
 
 base_treat <- as_tibble(base_treat_import)
 
