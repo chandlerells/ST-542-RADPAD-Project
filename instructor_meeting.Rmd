@@ -90,6 +90,7 @@ kable(
     - Treatment factors:
         - RADPAD
         - Occupation
+        - Procedure Type
     - Nuisance variables:
         - Weight 
         - Fluoroscopic Time
@@ -101,8 +102,6 @@ kable(
     - Random block effect:
         - Procedure
     - Issue with unequal block sizes?
-    
-*** Client also potentially interested in breaking down the analysis by Procedure Type
   
 
 
