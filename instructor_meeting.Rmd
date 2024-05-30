@@ -1,0 +1,110 @@
+---
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(knitr)
+```
+
+## Project
+
+Does the use of radiation absorbing, RADPAD drapes reduce radiation exposure to cardiac catheterization lab personnel during veterinary interventional procedures?
+
+## Client
+
+Dr. Kursten Pierce and Dr. Kristina Williams, NCSU College of Veterinary Medicine
+
+## Summary
+
+- Interventional cardiology relies on fluoroscopy, medical imaging that utilizes ionizing radiation.
+- Radiation exposure poses serious occupational health risks.
+- RADPAD drapes have been shown to decrease radiation to lab personnel in human studies.
+- The use of RADPAD drapes has not yet been evaluated in veterinary medicine.
+- **Study Goal**: if a significant reduction in radiation exposure is shown, RADPAD drapes could be included in standard radiation safety protocol for veterinary procedures.
+
+## First Client Meeting
+
+- Met with both clients last Thursday 5/23
+- Obtained detailed explanation of research questions and aims of the study
+- Received final data Wednesday 5/29
+- Client would like to present summary of analysis at a conference in late July
+
+## Data
+
+```{r}
+radpad <- read_csv("RADPAD DATA Stats team 5_28_24_FINAL.xlsx - Sheet1.csv", skip = 1)
+```
+
+```{r}
+kable(
+  radpad |>
+    group_by(`RADPAD Drape Used? Y/N`) |>
+    summarise(Count = n(),
+            "Average Operator Radiation Dose (microSV)" = mean(`Resident 1`))
+)
+```
+
+- 200 procedures performed on canines
+- 6 radiation exposure doses reported per procedure by occupation:
+    - Resident 1 (Primary Operator)
+    - Resident 2
+    - Faculty
+    - Tech 1
+    - Anesthesia
+    - TEE
+- Additional variables present:
+    - Weight (kg)
+    - Age (days)
+    - Procedure Type (BPV, PDA PMI, PV Stent)
+    - Total Fluoroscopic Time (min)
+    
+\newpage
+
+## Data Issues
+
+- Radiation exposure dose was not observed for all 6 occupations in every procedure
+- Two cases:
+    - Personnel not present during the procedure
+    - Personnel present but not wearing a radiation badge/badge malfunction
+
+```{r}
+nas <- radpad |>
+  mutate(across(where(is.character), ~na_if(., "n/a"))) |>
+  mutate(across(where(is.character), ~na_if(., "NB")))
+
+nas <-  nas[14:19]
+
+kable(
+  nas |>
+    summarise(across(everything(), ~sum(is.na(.)))) |>
+    pivot_longer(cols = everything(), names_to = "Occupation", values_to = "NA Values") |> 
+    arrange(`NA Values`)
+)
+```
+
+## Analysis Ideas
+ 
+1. ANCOVA Model
+    - Treatment factors:
+        - RADPAD
+        - Occupation
+    - Nuisance variables:
+        - Weight 
+        - Fluoroscopic Time
+
+2. Mixed Model
+    - Treatment factors:
+        - RADPAD
+        - Occupation
+    - Random block effect:
+        - Procedure
+    - Issue with unequal block sizes?
+    
+*** Client also potentially interested in breaking down the analysis by Procedure Type
+  
+
+
+
+
