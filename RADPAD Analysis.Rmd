@@ -1,0 +1,665 @@
+---
+title: "The BEAMS Study - Baseline Evaluation And Management of Scatter radiation using RADPAD radiation absorbing drapes"
+author: "Analysis completed by Sarah Pagan, Angelice Floyd, and Chandler Ellsworth"
+output: pdf_document
+header-includes:
+  - \usepackage{float}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+#read in relevant packages
+library(readxl)
+library(tidyverse)
+library(lmtest)
+library(car)
+#change default print option for tibbles to looking nicer when rendering to pdf
+print.tbl <- function(x, ...) {
+  knitr::kable(x, format = "latex", booktabs = TRUE) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+}
+```
+
+```{r}
+#read in Data
+tib <- read_excel("RADPAD DATA Stats team 5_28_24_FINAL.xlsx", skip = 1)
+```
+
+```{r}
+#select and rename relevant columns
+tib <- tib %>% 
+  mutate(Index = seq(1, nrow(tib), by = 1)) %>%
+  select(Index, `Weight (kg)`, `Procedure  type (BPV, PDA PMI, PV Stent)`, `RADPAD Drape Used? Y/N`, 
+         `Faculty`, `Tech 1`, `Resident 1`, `Resident 2`, `TEE`, `Anesthesia`, `Patient2`, `Total fluoro time (min)`, `DAP Total (Gycm2)`) %>% 
+  rename("Weight" = `Weight (kg)`, "Procedure_Type" = `Procedure  type (BPV, PDA PMI, PV Stent)`, 
+         "RADPAD" = `RADPAD Drape Used? Y/N`, "Tech1" = `Tech 1`, "Resident1" = `Resident 1`, 
+         "Resident2" = `Resident 2`, "Patient" = `Patient2`,"Time" = `Total fluoro time (min)`, "DAP" = `DAP Total (Gycm2)`)
+#convert to character type
+tib[,c("Index", "Procedure_Type", "RADPAD", "Faculty", "Tech1", "Resident1", "Resident2", "TEE", "Patient")]  <- 
+  lapply(tib[,c("Index", "Procedure_Type", "RADPAD", "Faculty", "Tech1", "Resident1", "Resident2", "TEE", "Patient")] , as.character)
+#pivot data longer
+tib_ <- tib %>%
+  pivot_longer(cols = Faculty:Patient, names_to = "Lab_Personnel", values_to = "Dose")
+```
+
+# Exploratory Data Analysis
+
+## Missing Data
+
+First, let's explore some potential data integrity issues, which include zero values, "n/a", and "NB". A zero value means that the personnel was wearing the radiation badge but received a zero reading for dose. This may or may not be due to the personnel being far enough away from the radiation source that they were not exposed to radiation. "n/a" values mean no badge/personnel was needed. "NB" means that the personnel was there but no badge was worn.
+```{r}
+print(tib_ %>%
+  group_by(RADPAD) %>%
+  summarise(Zero = sum(Dose == 0), `n/a` = (sum(Dose == "n/a") + sum(Dose == "n /a")), NB = sum(Dose == "NB"), 
+            number = sum(grepl("[1-9]", Dose))) %>%
+  mutate(total = Zero + `n/a` + NB + number))
+
+print(tib_ %>%
+  group_by(Lab_Personnel) %>%
+  summarise(Zero = sum(Dose == 0), `n/a` = (sum(Dose == "n/a") + sum(Dose == "n /a")), NB = sum(Dose == "NB"), 
+            number = sum(grepl("[1-9]", Dose))) %>%
+  mutate(total = Zero + `n/a` + NB + number))
+
+print(tib_ %>%
+  group_by(Procedure_Type) %>%
+  summarise(Zero = sum(Dose == 0), `n/a` = (sum(Dose == "n/a") + sum(Dose == "n /a")), NB = sum(Dose == "NB"), 
+            number = sum(grepl("[1-9]", Dose))) %>%
+  mutate(total = Zero + `n/a` + NB + number))
+```
+There are significant data integrity issues for patient since the badge was not available during the early data collection period. Also, RADPAD does not change/affect patient dose. RADPAD is designed to lower dose to personnel (Faculty, Tech1, Resident1, Resident2, TEE, and Anesthesia). Due to these reasons, patient will be removed from the analysis.  
+
+Resident 1 is typically closest to the x-ray beam/source and most often has a higher radiation dose as compared to resident 2. TEE is only needed in certain types of procedures, and in general, PMI does not require TEE. PDA procedure usually requires TEE. PV stents and BPVs are patient dependent on whether TEE is needed.  
+
+Zeros will remain in the analysis until the client validates whether these should be included or not. n/a's will be removed as these personnel were not needed in the procedure. NB's will also be removed unless the client (subject matter expert) knows of common methodologies in this domain for imputing values.
+
+```{r}
+#remove relevant data
+tib_ <- tib_ %>%
+  filter((Dose != "n/a") & (Dose != "NB") & (Dose != "n /a") & (Lab_Personnel != "Patient")) %>%
+  mutate(Dose = as.numeric(Dose), Relative_Exposure = as.numeric(Dose)/DAP)
+```
+
+## Sample Sizes
+
+The data was provided in wide format from the client, with each observation corresponding to 1 procedure. Each lab personnel, and their corresponding dose, were provided in individual columns. 159 procedures did not use RADPAD and 49 procedures used RADPAD. The data was pivoted to long format, so that lab personnel and dose were there own columns.
+
+With the data cleaned and pivoted to long format, lets count the number of observations we have for the relevant factors.
+```{r}
+#calculate sample sizes across different factors
+print(tib_ %>%
+  group_by(RADPAD) %>%
+  summarise(Count = n()))
+
+print(tib_ %>%
+  group_by(Lab_Personnel) %>%
+  summarise(Count = n()))
+
+print(tib_ %>%
+  group_by(Procedure_Type) %>%
+  summarise(Count = n()))
+```
+As noted, there are significantly more procedures that did not use RADPAD. Of the lab personnel, TEE is worth pointing out, with over half of the observations being removed from the original data due to n/a's or NB's. Of the procedure types, PV Stent has the smallest sample size and may be challenging to analyze, especially considering the small number of PV Stent procedure that used RADPAD.
+
+## Variation Within Each Factor
+
+Lets look at the standard deviation within each of the factor levels. This will be a good initial check to see if the constant variance assumption in linear regression is reasonable, or if the errors are likely to be heteroskedastic. 
+```{r}
+#calculate standard deviation among the factor levels
+print(tib_ %>%
+  group_by(RADPAD) %>%
+  summarise(SD = round(sd(Dose),2)))
+
+print(tib_ %>%
+  group_by(Lab_Personnel) %>%
+  summarise(SD = round(sd(Dose),2)))
+
+print(tib_ %>%
+  group_by(Procedure_Type) %>%
+  summarise(SD = round(sd(Dose),2)))
+```
+The constant variance assumption is likely to be violated considering how different the variation is across the levels of each factor.
+
+## Factor Effects on Covariates
+
+One of the assumptions of ANCOVA, or including a numeric covariate as a predictor along with a factor, is that the factors do not have an effect on the covariate. Lets check this by regressing each of the covariates on each of the factors and checking the corresponding p-values from an anova table. 
+```{r}
+df <- data.frame(
+  Covariate = c(rep("DAP", 3), rep("Weight", 3), rep("Time", 3)),
+  Factor = c(rep(c("RADPAD", "Lab Personnel", "Procedure Type"), 3)),
+  `P-value` = 
+    round(c(anova(lm(DAP ~ RADPAD, data = tib_))$`Pr(>F)`[1], 
+      anova(lm(DAP ~ Lab_Personnel, data = tib_))$`Pr(>F)`[1], 
+      anova(lm(DAP ~ Procedure_Type, data = tib_))$`Pr(>F)`[1], 
+      anova(lm(Weight ~ RADPAD, data = tib_))$`Pr(>F)`[1],
+      anova(lm(Weight ~ Lab_Personnel, data = tib_))$`Pr(>F)`[1], 
+      anova(lm(Weight ~ Procedure_Type, data = tib_))$`Pr(>F)`[1], 
+      anova(lm(Time ~ RADPAD, data = tib_))$`Pr(>F)`[1], 
+      anova(lm(Time ~ Lab_Personnel, data = tib_))$`Pr(>F)`[1], 
+      anova(lm(Time ~ Procedure_Type, data = tib_))$`Pr(>F)`[1]), 5))
+
+knitr::kable(df, format = "latex", booktabs = TRUE) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+Procedure type appears to be the factor that has the most significant effect on each of the covariates. This may present challenges when making conclusions from a model that includes both procedure type and the covariates. Including both may be justifable since the main factor effect of interest is RADPAD, which only has a significant effect on DAP. Lab Personnel does not appear to have an effect on any of the covariates. 
+
+## Relative Exposure
+
+One of the prior research papers the client provided included a similar study in human medicine as opposed to veterinary medicine. In this paper, the researchers used relative exposure (Radiation Dose/Patient DAP) as the primary response of interest as opposed to radiation dose. Using relative exposure as opposed to radiation dose accounts for interprocedural variance in patient exposure, normalizes radiation dose, and improves potential heteroskedasticity issues. Further, the primary factor of interest, RADPAD, has an effect on the primary covariate of interest, DAP, which presents challenges when including both in a model. Therefore, we will create this column in our data set and use as the new response.
+
+Lets see if this improves the potential heteroskedasticity issue.
+```{r}
+#calculate standard deviation among the factor levels
+print(tib_ %>%
+  group_by(RADPAD) %>%
+  summarise(SD = round(sd(Relative_Exposure),2)))
+
+print(tib_ %>%
+  group_by(Lab_Personnel) %>%
+  summarise(SD = round(sd(Relative_Exposure),2)))
+
+print(tib_ %>%
+  group_by(Procedure_Type) %>%
+  summarise(SD = round(sd(Relative_Exposure),2)))
+
+```
+Comparing the variation using relative exposure versus dose, it looks like variation across factor levels is more common using relative exposure.
+
+## Numeric Summaries
+
+Now that the response of interest has been selected, let's look at summary measures of RADPAD and lab personnel/procedure type across levels of RADPAD.
+```{r}
+#calculate numeric summaries of mean, median, and sd
+print(tib_ %>%
+  select(RADPAD, Relative_Exposure) %>%
+  group_by(RADPAD) %>%
+  summarise(
+    Mean = round(mean(Relative_Exposure),2),
+    Median = round(median(Relative_Exposure),2),
+    SD = round(sd(Relative_Exposure),2)))
+
+print(tib_ %>%
+  select(RADPAD, Lab_Personnel, Relative_Exposure) %>%
+  group_by(RADPAD, Lab_Personnel) %>%
+  summarise(
+    Mean = round(mean(Relative_Exposure),2),
+    Median = round(median(Relative_Exposure),2),
+    SD = round(sd(Relative_Exposure),2)))
+
+print(tib_ %>%
+  select(RADPAD, Procedure_Type, Relative_Exposure) %>%
+  group_by(RADPAD, Procedure_Type) %>%
+  summarise(
+    Mean = round(mean(Relative_Exposure),2),
+    Median = round(median(Relative_Exposure),2),
+    SD = round(sd(Relative_Exposure),2)))
+```
+## Box plots
+
+Let's further visualize the five-number summary of RADPAD and lab personnel/procedure type across levels of RADPAD.
+
+```{r, out.width = "100%", out.height = "48%"}
+#create appropriate box plots
+ggplot(tib_, aes(x = RADPAD, y = Relative_Exposure, fill = RADPAD)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 5)) +
+  labs(title = "Boxplot of Relative Exposure by RADPAD",
+       x = "RADPAD",
+       y = "Relative Exposure") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(tib_, aes(x = Lab_Personnel, y = Relative_Exposure, fill = RADPAD)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 7)) +
+  labs(title = "Boxplot of Relative Exposure by Lab Personnel",
+       x = "Lab Personnel",
+       y = "Relative Exposure") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(tib_, aes(x = Procedure_Type, y = Relative_Exposure, fill = RADPAD)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 7)) +
+  labs(title = "Boxplot of Relative Exposure by Procedure Type",
+       x = "Procedure Type",
+       y = "Relative Exposure") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+The box plots had to be zoomed in on a specific range of relative exposure because there are significant outliers in the data. Since these could not be captured from the box plots, let's look at tables that show the .9 quantile and max value of RADPAD and lab personnel/procedure type across levels of RADPAD.
+```{r}
+#calculate .9 quantile and max value
+print(tib_ %>%
+  select(RADPAD, Relative_Exposure) %>%
+  group_by(RADPAD) %>%
+  summarise(
+    Q90 = round(quantile(Relative_Exposure, 0.9),2),
+    Max = round(max(Relative_Exposure),2)))
+
+print(tib_ %>%
+  select(RADPAD, Lab_Personnel, Relative_Exposure) %>%
+  group_by(RADPAD, Lab_Personnel) %>%
+  summarise(
+    Q90 = round(quantile(Relative_Exposure, 0.9),2),
+    Max = round(max(Relative_Exposure),2)))
+
+print(tib_ %>%
+  select(RADPAD, Procedure_Type, Relative_Exposure) %>%
+  group_by(RADPAD, Procedure_Type) %>%
+  summarise(
+    Q90 = round(quantile(Relative_Exposure, 0.9),2),
+    Max = round(max(Relative_Exposure),2)))
+```
+The difference in just the .9 quantile value and max value are significant for many of the factor levels across RADPDAD, which may indicates significant outliers in the data. 
+
+## Histograms
+
+Since many models make the assumption errors, and therefore the response, are normally distributed, let's look at density plots of relative exposure both with and without some common transformations. Within each plot, a smooth normal density curve will be overlaid to see how it compares to the observed data.
+```{r}
+#set up a 2x2 plotting space
+par(mfrow = c(2, 2))
+
+#create histograms and overlay normal density curves
+#no transformations
+hist(tib_$Relative_Exposure, breaks = 20, freq = FALSE, col = 'skyblue', main = 'No Transform', xlab = 'Relative Exposure')
+x <- seq(min(tib_$Relative_Exposure), max(tib_$Relative_Exposure), length = 100)
+y <- dnorm(x, mean = mean(tib_$Relative_Exposure), sd = sd(tib_$Relative_Exposure))
+lines(x, y, col = 'darkgreen', lwd = 2)
+
+#create function to apply the optimal lambda to transform the response variable using Box-Cox
+box_transform <- function(response, lambda) {
+  if (lambda == 0) {
+    response <- log(response)
+  } else {
+    response <- (response^lambda - 1) / lambda
+  }
+  return(response)
+}
+
+#perform Box-Cox transformation on the response variable
+bc <- MASS::boxcox(lm((Relative_Exposure + 1) ~ RADPAD*Procedure_Type*Lab_Personnel + Weight + Time, data = tib_), plotit = FALSE)
+lambda_optimal <- bc$x[which.max(bc$y)]
+check_response <- box_transform(tib_$Relative_Exposure + 1, lambda_optimal)
+
+#Box-Cox transformation
+hist(check_response, breaks = 20, freq = FALSE, col = 'skyblue', main = 'BoxCox Transform', xlab = 'Relative Exposure')
+x <- seq(min(check_response), max(check_response), length = 100)
+y <- dnorm(x, mean = mean(check_response), sd = sd(check_response))
+lines(x, y, col = 'darkgreen', lwd = 2)
+
+#log transformation
+hist(log(tib_$Relative_Exposure + 1), breaks = 20, freq = FALSE, col = 'skyblue', main = 'Log Transform', xlab = 'Relative Exposure')
+x <- seq(min(log(tib_$Relative_Exposure + 1)), max(log(tib_$Relative_Exposure + 1)), length = 100)
+y <- dnorm(x, mean = mean(log(tib_$Relative_Exposure + 1)), sd = sd(log(tib_$Relative_Exposure + 1)))
+lines(x, y, col = 'darkgreen', lwd = 2)
+
+#square root transformation
+hist(sqrt(tib_$Relative_Exposure), breaks = 20, freq = FALSE, col = 'skyblue', main = 'Square Root Transform', xlab = 'Relative Exposure')
+x <- seq(min(sqrt(tib_$Relative_Exposure)), max(sqrt(tib_$Relative_Exposure)), length = 100)
+y <- dnorm(x, mean = mean(sqrt(tib_$Relative_Exposure)), sd = sd(sqrt(tib_$Relative_Exposure)))
+lines(x, y, col = 'darkgreen', lwd = 2)
+
+#reset plotting parameters to default
+par(mfrow = c(1, 1))
+```
+None of the most common transformations significantly make the response look normal. However, the Box-Cox transformation will be used when a transformation is needed, as it looks better and improves the homoscedasticity assumption of the errors compared to the other transformations.
+
+## Scatter Plots
+
+Many statistical models also generally make the assumption the relationship between the response and the combination of factors and covariates is linear. While scatter plots of the response against each covariate, possibly stratified by levels of the factors, could be used to visually assess linearity, the assumption does not necessarily imply that the response is linear in terms of subsets of the factors and covariates individually, but rather in terms of the overall model. For now, let's look at scatter plots of the response against each covariate to assess a linear relationship. Later, during the model fitting process, if residual plots exhibit some sort of pattern or behavior, we will further investigate if the linearity assumption holds for that particular model. We can do this by looking at partial regression or added variable plots, although these can be difficult to interpret with factor variables.
+```{r}
+#set up a 2x2 plotting space
+par(mfrow = c(1, 2))
+#fit linear model to plot on scatter plot
+fit <- lm(Relative_Exposure ~ Weight, data = tib_)
+#create scatter plot
+plot(tib_$Weight, tib_$Relative_Exposure,
+     main = "Scatter Plot of Weight vs Relative Exposure",
+     xlab = "Weight (kg)",
+     ylab = "Relative Exposure",
+     ylim = c(0,30),
+     pch = 1,  
+     col = "black",  
+     frame = FALSE,
+     cex.main = 0.8, 
+     cex.lab = 0.8,
+     cex.axis = 0.8) 
+#add correlation text value to the plot
+text(max(tib_$Weight), 30, 
+     label = paste("Correlation =", round(cor(tib_$Weight, tib_$Relative_Exposure),3)),
+     adj = c(1, 1),
+     font = 2,
+     cex = 0.7)
+#add fitted regression line
+abline(fit, col = "red", lwd = 1)
+#fit linear model to plot on scatter plot
+fit2 <- lm(Relative_Exposure ~ Time, data = tib_)
+#create scatter plot
+plot(tib_$Time, tib_$Relative_Exposure,
+     main = "Scatter Plot of Time vs Relative Exposure",
+     xlab = "Time (min)",
+     ylab = "Relative Exposure",
+     ylim = c(0,30),
+     pch = 1, 
+     col = "black",  
+     frame = FALSE,
+     cex.main = 0.8, 
+     cex.lab = 0.8,
+     cex.axis = 0.8)
+#add correlation text value to the plot
+text(max(tib_$Time), 30, 
+     label = paste("Correlation =", round(cor(tib_$Time, tib_$Relative_Exposure),3)),
+     adj = c(1, 1),
+     font = 2,
+     cex = 0.7)
+#add fitted regression line
+abline(fit2, col = "red", lwd = 1)
+```
+From the plots and correlation values, there does not appear to be a significant linear relationship between weight and relative exposure, as well as time and relative exposure. Note also that some of the values were cutoff, as a few extreme relative exposure values distorted the scatter plots.
+
+## Interaction Plots
+
+Lastly, let's look at relevant two-way and three-way interaction plots to explore and understand interactions between factors. This will allow us to visually investigate if the effect of one factor on relative exposure depends on the level of another factor.
+```{r, out.width = "55%", out.height = "50%"}
+#create plot margins
+par(mar = c(5, 4, 4, 5), xpd = TRUE)
+#create two-way interaction plot between RADPAD and procedure type
+interaction.plot(
+  x.factor = tib_$Procedure_Type,
+  trace.factor = tib_$RADPAD,
+  response = tib_$Relative_Exposure, 
+  legend = FALSE,
+  col = c("red", "blue"), 
+  lty = 1,
+  pch = 20,
+  type = "b",
+  xlab = "Procedure Type", 
+  ylab = "Mean Relative Exposure",
+  main = "Interaction Plot of RADPAD and Procedure Type"
+)
+#add legend to interaction plot
+legend("topright", inset = c(-.2, 0), legend = unique(tib_$RADPAD), 
+       col = c("red", "blue"), 
+       pch = 20, 
+       lty = 1, 
+       box.lty = 1,
+       title = "RADPAD")
+#make x-axis ticks smaller so they are all shown
+par(cex.axis = .9)
+#create two-way interaction plot between RADPAD and lab personnel
+interaction.plot(
+  x.factor = tib_$Lab_Personnel,
+  trace.factor = tib_$RADPAD,
+  response = tib_$Relative_Exposure, 
+  legend = FALSE,
+  col = c("red", "blue"), 
+  lty = 1,
+  pch = 20,
+  type = "b",
+  xlab = "Lab Personnel", 
+  ylab = "Mean Relative Exposure",
+  main = "Interaction Plot of RADPAD and Lab Personnel"
+)
+#add legend to interaction plot
+legend("topright", inset = c(-.2, 0), legend = unique(tib_$RADPAD), 
+       col = c("red", "blue"), 
+       pch = 20, 
+       lty = 1, 
+       box.lty = 1,
+       title = "RADPAD")
+```
+```{r}
+#create data frame of means across each combination of the three factors
+mean_data <- aggregate(Relative_Exposure ~ RADPAD + Lab_Personnel + Procedure_Type, data = tib_, FUN = mean)
+#create three-way interaction plot
+ggplot(mean_data, aes(x = Lab_Personnel, y = Relative_Exposure, color = RADPAD)) +
+  geom_point(size = 2) +
+  geom_line(aes(group = interaction(RADPAD, Procedure_Type)), size = 1) +
+  facet_wrap(~ Procedure_Type, scales = "free") +
+  labs(x = "Lab Personnel", y = "Mean Relative Exposure", color = "RADPAD") +
+  theme_minimal() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(size = 7)) +
+  ggtitle("Three-Way Interaction Plot Between RADPAD, Lab Personnel, & Procedure Type") + 
+  theme(axis.text.x = element_text(angle = 35, hjust = .8))
+```
+
+From the two-way interaction plots, the lines indicated by RADPAD level do not cross and appear somewhat parallel. This may indicate that it is plausible the effect of RADPAD is constant across levels of procedure type or levels of lab personnel. The three-way interaction plot looks fairly similar to the two-way interaction plot between RADPAD and lab personnel, with differences in the effect of RADPAD in the PMI procedure for TEE, as well as the PV Stent procedure for resident 2 and TEE.
+
+# Model Fitting
+
+In this section, let's begin fitting models, analyzing the output, and checking assumptions.
+
+To start, let's fit a model that includes all factors, their interaction, all covariates, original response, and no transformations.
+$$
+y_{ijkl} = \mu + \alpha_{i} + \beta_{j} + \gamma_{k} + (\alpha\beta)_{ij} + (\alpha\gamma)_{ik} + (\beta\gamma)_{jk} + (\alpha\beta\gamma)_{ijk} + \lambda_{1}x_{ijkl1} + \lambda_{2}x_{ijkl2} + \lambda_{3}x_{ijkl3} + e_{ijkl} 
+$$
+$$
+\text{where} \ e_{ijkl} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{relative exposure}, \ x_{1} = \text{weight}, \ x_{2} = \text{time}, \  x_{3} = \text{DAP}
+$$
+$$
+\text{for} \ i = 1,2 \ (\text{RADPAD}), \ \ j = 1,2,3,4,5,6 \ (\text{lab personnel}), \ k = 1,2,3,4 \ (\text{procedure type})
+$$
+
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#fit linear regression model
+lm.fit <- lm(Dose ~ RADPAD*Lab_Personnel*Procedure_Type + Weight + Time + DAP, 
+             data = tib_)
+#look at anova table
+anova(lm.fit)
+#plot residuals
+par(mar = c(4, 4, 1.5, 1))
+plot(lm.fit, which = c(1,2), sub = "")
+```
+
+The residual and QQ plots show significant violations of model assumptions.
+
+To attempt to improve model assumptions, let's fit a model transforming the new response, relative exposure, with a Box-Cox transformation. All factors and their interactions will be included, along with the covariates weight and time.
+$$
+y_{ijkl} = \mu + \alpha_{i} + \beta_{j} + \gamma_{k} + (\alpha\beta)_{ij} + (\alpha\gamma)_{ik} + (\beta\gamma)_{jk} + (\alpha\beta\gamma)_{ijk} + \lambda_{1}x_{ijkl1} + \lambda_{2}x_{ijkl2} + e_{ijkl} 
+$$
+$$
+\text{where} \ e_{ijkl} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{Box-Cox(relative exposure)}, \ x_{1} = \text{weight}, \ x_{2} = \text{time}
+$$
+$$
+\text{for} \ i = 1,2 \ (\text{RADPAD}), \ \ j = 1,2,3,4,5,6 \ (\text{lab personnel}), \ k = 1,2,3,4 \ (\text{procedure type})
+$$
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#fit linear regression model
+lm.fit <- lm(box_transform(tib_$Relative_Exposure + 1, lambda_optimal) ~ RADPAD*Lab_Personnel*Procedure_Type + Weight + Time, 
+             data = tib_)
+#look at anova table
+anova(lm.fit)
+#plot residuals
+par(mar = c(4, 4, 1.5, 1))
+plot(lm.fit, which = c(1,2), sub = "")
+```
+
+While model assumptions improve, there are still significant violations of constant variance and normality.
+
+Let's slowly walk through each of the factors, adding one factor at a time, to see where the model violations start to appear.
+$$
+y_{ij} = \mu + \alpha_{i} + e_{ij}
+$$
+$$
+\text{where} \ e_{ij} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{Box-Cox(relative exposure)}
+$$
+$$
+\text{for} \ i = 1,2 \ (\text{RADPAD})
+$$
+```{r, fig.show = "hold", out.width = "100%", out.height = "30%"}
+#perform Box-Cox transformation on the response variable
+bc <- MASS::boxcox(lm((Relative_Exposure + 1) ~ RADPAD, data = tib_), plotit = FALSE)
+lambda_optimal <- bc$x[which.max(bc$y)]
+#fit model and look at residual plot
+par(mar = c(4, 4, 1.5, 1))
+plot(lm(box_transform(Relative_Exposure + 1, lambda_optimal) ~ RADPAD, data = tib_), 
+     which = 1, sub = "")
+```
+
+$$
+y_{ij} = \mu + \beta_{i} + e_{ij}
+$$
+$$
+\text{where} \ e_{ij} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{Box-Cox(relative exposure)}
+$$
+$$
+\text{for} \ i = 1,2,3,4,5,6 \ (\text{lab personnel})
+$$
+```{r, fig.show = "hold", out.width = "100%", out.height = "30%"}
+#perform Box-Cox transformation on the response variable
+bc <- MASS::boxcox(lm((Relative_Exposure + 1) ~ Lab_Personnel, data = tib_), plotit = FALSE)
+lambda_optimal <- bc$x[which.max(bc$y)]
+#fit model and look at residual plot
+par(mar = c(4, 4, 1.5, 1))
+plot(lm(box_transform(Relative_Exposure + 1, lambda_optimal) ~ Lab_Personnel, data = tib_), 
+     which = 1, sub = "")
+```
+
+$$
+y_{ij} = \mu + \gamma_{i} + e_{ij}
+$$
+$$
+\text{where} \ e_{ij} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{Box-Cox(relative exposure)}
+$$
+$$
+\text{for} \ i = 1,2,3,4 \ (\text{procedure type})
+$$
+```{r, fig.show = "hold", out.width = "100%", out.height = "30%"}
+#perform Box-Cox transformation on the response variable
+bc <- MASS::boxcox(lm((Relative_Exposure + 1) ~ Procedure_Type, data = tib_), plotit = FALSE)
+lambda_optimal <- bc$x[which.max(bc$y)]
+#fit model and look at residual plot
+par(mar = c(4, 4, 1.5, 1))
+plot(lm(box_transform(Relative_Exposure + 1, lambda_optimal) ~ Procedure_Type, data = tib_), 
+     which = 1, sub = "")
+```
+
+$$
+y_{ijk} = \mu + \alpha_{i} + \beta_{j} + (\alpha\beta)_{ij} + e_{ijk}
+$$
+$$
+\text{where} \ e_{ijk} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{Box-Cox(relative exposure)}
+$$
+$$
+\text{for} \ i = 1,2 \ (\text{RADPAD}), \ j = 1,2,3,4,5,6 \ (\text{lab personnel})
+$$
+```{r, fig.show = "hold", out.width = "100%", out.height = "30%"}
+#perform Box-Cox transformation on the response variable
+bc <- MASS::boxcox(lm((Relative_Exposure + 1) ~ RADPAD*Lab_Personnel, data = tib_), plotit = FALSE)
+lambda_optimal <- bc$x[which.max(bc$y)]
+#fit model and look at residual plot
+par(mar = c(4, 4, 1.5, 1))
+plot(lm(box_transform(Relative_Exposure + 1, lambda_optimal) ~ RADPAD*Lab_Personnel, data = tib_), 
+     which = 1, sub = "")
+```
+
+$$
+y_{ijk} = \mu + \alpha_{i} + \gamma_{j} + (\alpha\gamma)_{ij} + e_{ijk}
+$$
+$$
+\text{where} \ e_{ijk} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{Box-Cox(relative exposure)}
+$$
+$$
+\text{for} \ i = 1,2 \ (\text{RADPAD}), \ j = 1,2,3,4 \ (\text{procedure type})
+$$
+```{r, fig.show = "hold", out.width = "100%", out.height = "30%"}
+#perform Box-Cox transformation on the response variable
+bc <- MASS::boxcox(lm((Relative_Exposure + 1) ~ RADPAD*Procedure_Type, data = tib_), plotit = FALSE)
+lambda_optimal <- bc$x[which.max(bc$y)]
+#fit model and look at residual plot
+par(mar = c(4, 4, 1.5, 1))
+plot(lm(box_transform(Relative_Exposure + 1, lambda_optimal) ~ RADPAD*Procedure_Type, data = tib_), 
+     which = 1, sub = "")
+```
+
+$$
+y_{ijkl} = \mu + \alpha_{i} + \beta_{j} + \gamma_{k} + (\alpha\beta)_{ij} + (\alpha\gamma)_{ik} + (\beta\gamma)_{jk} + (\alpha\beta\gamma)_{ijk} + e_{ijkl} 
+$$
+$$
+\text{where} \ e_{ijkl} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{Box-Cox(relative exposure)}
+$$
+$$
+\text{for} \ i = 1,2 \ (\text{RADPAD}), \ \ j = 1,2,3,4,5,6 \ (\text{lab personnel}), \ k = 1,2,3,4 \ (\text{procedure type})
+$$
+```{r, fig.show = "hold", out.width = "100%", out.height = "30%"}
+#perform Box-Cox transformation on the response variable
+bc <- MASS::boxcox(lm((Relative_Exposure + 1) ~ RADPAD*Procedure_Type*Lab_Personnel, data = tib_), plotit = FALSE)
+lambda_optimal <- bc$x[which.max(bc$y)]
+#fit model and look at residual plot
+par(mar = c(4, 4, 1.5, 1))
+plot(lm(box_transform(Relative_Exposure + 1, lambda_optimal) ~ RADPAD*Procedure_Type*Lab_Personnel, data = tib_), 
+     which = 1, sub = "")
+```
+
+After trying to diagnose where the assumption violations start to occur, it appears in almost all cases the normality and constant variance assumptions will be violated, especially when lab personnel is included in the model. This makes sense because from the EDA, it was apparent the response, or any common transformation on the response, was not normal. Also there were significant differences in variation across factor levels.
+
+A few important reasons could be causing this:  
+
+1. There are a significant amount of zeros in the data and the data is heavily skewed towards zero.  
+2. We are missing some other major factor or covariate, such as distance from the radiation source.  
+3. Small sample sizes for a few of the procedures and lab personnel.  
+4. Many of the lab personnel aside from resident 1 have questionable data. This is likely due to the distance of certain personnel within a fixed procedure being highly variable and not controlled for. Further, certain personnel are able to see real time their radiation exposure and adjust their position accordingly.  
+5. Not a randomized controlled experiment.  
+
+To conduct proper inference using a model with valid assumptions, we will likely need to do linear regression on a subset of the data, or relax the assumptions of normality, constant variance, etc., by using a general linear model and modeling the errors with some form of a zero inflated distribution. 
+
+First, since analyzing the effect of RADPAD on radiation exposure for resident 1 is of primary interest and resident 1 does not have any zero values, let's filter the data set for just resident 1 and see if this improves model assumptions.
+$$
+y_{ijk} = \mu + \alpha_{i} + \beta_{j} + (\alpha\beta)_{ij} + \lambda_{1}x_{ijkl1} + \lambda_{2}x_{ijkl2} + e_{ijk} 
+$$
+$$
+\text{where} \ e_{ijk} \overset{IID}{\sim} N(0,\sigma^2), \ y = \text{Box-Cox(relative exposure for resident1)}, \ x_{1} = \text{weight}, \ x_{2} = \text{time}
+$$
+$$
+\text{for} \ i = 1,2 \ (\text{RADPAD}), \ \ j = 1,2,3,4 \ (\text{procedure type})
+$$
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+# Perform Box-Cox transformation on the response variable y
+bc <- MASS::boxcox(lm(Relative_Exposure ~  RADPAD * Procedure_Type + Weight + Time, 
+                      data = tib_ %>% filter(Lab_Personnel == "Resident1")), plotit = FALSE)
+# Extract the optimal lambda
+lambda_optimal <- bc$x[which.max(bc$y)]
+
+lm.fit <- lm(box_transform(Relative_Exposure, lambda_optimal) ~ RADPAD * Procedure_Type + Weight + Time, 
+             data = tib_ %>% filter(Lab_Personnel == "Resident1"))
+anova(lm.fit)
+par(mar = c(4, 4, 1.5, 1))
+plot(lm.fit, sub = "")
+```
+
+Overall, the residual and QQ plots look significantly better. Let's use formal tests to check these as well.  
+We will use:  
+
+- Shapiro Test to test for normality  
+- Durbin-Watson Test to test for correlation  
+- Breusch-Pagan Test to test for constant variance  
+
+```{r}
+#conduct Shapiro Test
+shapiro.test(resid(lm.fit))
+#conduct Durbin-Watson Test
+dwtest(lm(box_transform(Relative_Exposure, lambda_optimal) ~ RADPAD * Procedure_Type + Weight + Time, 
+          data = tib_ %>% filter(Lab_Personnel == "Resident1")))
+#conduct Breusch-Pagan Test
+bptest(lm.fit, studentize = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
