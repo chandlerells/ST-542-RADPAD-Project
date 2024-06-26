@@ -1,0 +1,115 @@
+---
+title: "RADPAD Analysis: Resident 1"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(emmeans)
+library(broom)
+library(lme4)
+options("scipen" = 3)
+```
+
+```{r}
+r <- read_csv("radpad.csv") |>
+  mutate(Relative_Dose = Dose/Patient_DAP)
+r_R <- r |> filter(Occupation == "Resident 1")
+```
+
+## ANOVA for Relative Dose
+
+**Model**: $\space RelativeDose \sim RADPAD + Procedure + (RADPAD \times Procedure) + Weight + Time$ 
+
+where: $\space \space RelativeDose = \frac{Dose\space(microSV)}{PatientDAP}$
+
+```{r}
+m <- lm(Relative_Dose ~ RADPAD*Procedure + Weight + Time, data = r_R)
+b <- MASS::boxcox(m, plotit=FALSE)
+l <- b$x[which.max(b$y)]  ## log transform
+m_R <- lm(log(Relative_Dose) ~ RADPAD*Procedure + Weight + Time, data = r_R)
+anova(m_R)
+```
+
+## Contrast Estimates for RADPAD Effect on Log Scale
+
+```{r}
+rg <- ref_grid(m_R)
+em <- emmeans(rg, ~RADPAD)
+c <- contrast(em, interaction = "revpairwise")
+knitr::kable(summary(em, infer = c(FALSE, FALSE)))
+knitr::kable(tidy(summary(c, infer = c(TRUE, TRUE))))
+```
+
+## Contrast Estimates for RADPAD Effect on Response Scale
+
+```{r}
+rg <- ref_grid(m_R)
+em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD)
+c <- contrast(em, interaction = "revpairwise")
+knitr::kable(tidy(summary(em, infer = c(FALSE, FALSE))))
+knitr::kable(tidy(summary(c, infer = FALSE)))
+p_red <- abs(round((tidy(em)$response[2]-tidy(em)$response[1])/tidy(em)$response[1]*100, 2))
+```
+
+`r p_red`% reduction in Relative Dose for Resident 1 due to RADPAD, averaging over Procedure Type and controlling for Weight and Time.
+
+\newpage
+
+## Contrast Estimates for RADPAD by Procedure Interaction on Log Scale
+
+```{r}
+rg <- ref_grid(m_R)
+em <- emmeans(rg, ~RADPAD|Procedure)
+c <- contrast(em, interaction = "revpairwise")
+sumem <- tidy(summary(em, infer = FALSE))
+knitr::kable(sumem)
+sumc <- tidy(summary(c, infer = TRUE)) |>
+  rename("RADPAD  " = RADPAD_revpairwise)
+knitr::kable(sumc)
+```
+
+## Contrast Estimates for RADPAD by Procedure Interaction on Response Scale
+
+```{r}
+rg <- ref_grid(m_R)
+em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD|Procedure)
+c <- contrast(em, interaction = "revpairwise")
+knitr::kable(tidy(summary(em, infer = c(FALSE, FALSE)), digits = 10))
+knitr::kable(tidy(summary(c, infer = FALSE)), digits = 10)
+```
+
+
+
+```{r}
+##shapiro.test(residuals(m_R))
+```
+
+
+```{r}
+##car::ncvTest(m_R)
+```
+
+```{r}
+##lmtest::dwtest(m_R)
+```
+
+## Residual Analysis
+
+```{r, out.width = "50%", out.height = "50%"}
+plot(m_R)
+```
+
+## Influential Data Points
+
+```{r}
+r_o <- r_R[c(85, 156, 168, 172, 189, 191), ] |>
+  select(MRN, Occupation, Procedure, Weight, Time, Dose, Patient_DAP, Relative_Dose)
+knitr::kable(r_o)
+```
+
+
+
+
+
