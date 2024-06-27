@@ -1,4 +1,5 @@
 ---
+title: "RADPAD for Procedure Type"
 output: pdf_document
 ---
 
@@ -7,17 +8,17 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(readxl)
 library(tidyverse)
 library(car)
-library(lsmeans)
 library(tidyverse)
 library(glmmTMB)
+library(lsmeans)
 ```
 
-```{r}
+```{r, include=FALSE}
 # Read in Data
-tib <- read_excel("/Users/angelicefloyd/Documents/Documents/ST542_Statistical_Practice/RADPAD_Study/ST-542-RADPAD-Project/RADPAD DATA Stats team 5_28_24_FINAL.xlsx", skip = 1)
+tib <- read_excel("RADPAD DATA Stats team 5_28_24_FINAL.xlsx", skip = 1)
 ```
 
-```{r}
+```{r, include=FALSE}
 # Select and Rename Relevant Columns
 
 tib <- tib %>% 
@@ -42,7 +43,7 @@ tib_ <- tib %>%
 tib_$Procedure_Type[tib_$Procedure_Type == "PV stent"] <- "PV Stent"
 ```
 
-Initial look at the distribution of each Personnel Type 
+Initial look at the distribution of each Personnel Type . We see that Anesthesia, Faculty, Resident2 and Tech1 are zero inflated.
 ```{r}
 hist_0 <- ggplot(tib_)+ 
   geom_histogram(mapping=aes(x=Dose), position="identity", bins = 50) + 
@@ -53,7 +54,7 @@ hist_0 <- ggplot(tib_)+
 hist_0
 ```
 
-
+Below Calculates the Box Cox Transformations
 ```{r}
 #Box Cox transformation 
 library(MASS)
@@ -68,7 +69,7 @@ tran <- make.tran("power", param = c(-0.5, -1))
 tib_$box <- with(tran,linkfun(tib_$Dose))
 
 ```
-Look at the Personnel Type after Box Cox transformations 
+Look at the Personnel Type after Box Cox transformations . The distributions for Resident 1 and TEE seemed to have benefited while the the others did not. 
 ```{r}
 
 #Box Cox Hist 
@@ -87,13 +88,13 @@ hist_1
 
 #Gamma Regression
 
-Resident 1
+Resident 1 : For some reason, when I use the lmtest library in the first code block it caused an error in pulling the data in . 
+
+Plot of Residual Values vs Fitted 
 ```{r}
 
-library(nlme)
-library(emmeans)
 library(lmtest)
-
+library(nlme)
 #fit a GLM with gamma family
 tib_r1 <- tib_ %>% filter(Lab_Personnel == 'Resident1')
 #unequal variance between RADPAD levels
@@ -106,87 +107,125 @@ gls.fit2 <- gls(box ~ RADPAD * Procedure_Type + Weight + Time,
 residual <- residuals(gls.fit2, type = 'pearson')
 #get the fitted values
 fitted_values <- fitted(gls.fit2)
+
+
 #plot residuals vs fitted
 plot(fitted_values, residual, xlab = "Fitted values", ylab = "Pearson residuals", main = "Residuals vs Fitted", pch = 1, col = "dodgerblue")
 abline(h=0)
+
+
+```
+
+Plot of Normal QQ Plot
+```{r}
 #normal QQ plot
 qqnorm(residual, pch = 1, col = "dodgerblue")
 abline(0,1, lwd=2)
 
+```
 
+Heteroskedasticity Test
+```{r}
 white_test <- data.frame(
   residuals = residual,
   fitted_values = fitted_values)
 #conduct White Test
 bptest(I(residuals^2) ~ fitted_values + I(fitted_values^2), data = white_test)
+
 ```
 
 TEE
 
+Plot of Residual Values vs Fitted 
 ```{r}
 
-library(nlme)
-library(emmeans)
 library(lmtest)
-
+library(nlme)
 #fit a GLM with gamma family for TEE
-tib_r1 <- tib_ %>% filter(Lab_Personnel == 'TEE')
+tib_tee1 <- tib_ %>% filter(Lab_Personnel == 'TEE')
 #unequal variance between RADPAD levels
-gls.fit2 <- gls(box ~ RADPAD * Procedure_Type + Weight + Time, 
-    data = tib_r1,
+gls.fit3 <- gls(box ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = tib_tee1,
     weights = varIdent(form = ~ 1 | RADPAD))
 
 
 #get the residuals (standardized)
-residual <- residuals(gls.fit2, type = 'pearson')
+residual1 <- residuals(gls.fit3, type = 'pearson')
 #get the fitted values
-fitted_values <- fitted(gls.fit2)
+fitted_values <- fitted(gls.fit3)
 #plot residuals vs fitted
-plot(fitted_values, residual, xlab = "Fitted values", ylab = "Pearson residuals", main = "Residuals vs Fitted", pch = 1, col = "dodgerblue")
+plot(fitted_values, residual1, xlab = "Fitted values", ylab = "Pearson residuals", main = "Residuals vs Fitted", pch = 1, col = "dodgerblue")
 abline(h=0)
+
+```
+
+Normal QQ Plot
+```{r}
 #normal QQ plot
-qqnorm(residual, pch = 1, col = "dodgerblue")
+qqnorm(residual1, pch = 1, col = "dodgerblue")
 abline(0,1, lwd=2)
+```
 
-
+Heteroscedasticity Test
+```{r}
 white_test <- data.frame(
-  residuals = residual,
+  residuals = residual1,
   fitted_values = fitted_values)
 #conduct White Test
-bptest(I(residuals^2) ~ fitted_values + I(fitted_values^2), data = white_test)
+bptest(I(residual1^2) ~ fitted_values + I(fitted_values^2), data = white_test)
+
 ```
 
 
 
 Zero Inflated Gamma for Faculty, Resident2, Anesthesia and Maybe Tech 1
+
+Faculty 
 ```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
 #fit zero-inflated gamma model
-zig.fit2 <- glmmTMB(Relative_Dose ~ RADPAD*Procedure_Type + Weight + Time,
+zig.fit1 <- glmmTMB(Relative_Dose ~ RADPAD*Procedure_Type + Weight + Time,
                   ziformula = ~ 1,
                   family = ziGamma(link = "log"), 
                   data = tib_ %>% filter(Lab_Personnel == "Faculty"))
+
+
+plot(DHARMa:: simulateResiduals(fittedModel = zig.fit1))
+```
+
+Resident2
+```{r}
+#fit zero-inflated gamma model
+zig.fit2 <- glmmTMB(Relative_Dose ~ RADPAD*Procedure_Type + Weight + Time,
+                  ziformula = ~ 1+RADPAD,
+                  family = ziGamma(link = "log"), 
+                  data = tib_ %>% filter(Lab_Personnel == "Resident2"))
+plot(DHARMa:: simulateResiduals(fittedModel = zig.fit2))
+
+```
+
+Anesthesia
+```{r}
 #fit zero-inflated gamma model
 zig.fit3 <- glmmTMB(Relative_Dose ~ RADPAD*Procedure_Type + Weight + Time,
                   ziformula = ~ 1+RADPAD,
                   family = ziGamma(link = "log"), 
-                  data = tib_ %>% filter(Lab_Personnel == "Resident2"))
-#fit zero-inflated gamma model
-zig.fit4 <- glmmTMB(Relative_Dose ~ RADPAD*Procedure_Type + Weight + Time,
-                  ziformula = ~ 1+RADPAD,
-                  family = ziGamma(link = "log"), 
                   data = tib_ %>% filter(Lab_Personnel == "Anesthesia"))
+plot(DHARMa:: simulateResiduals(fittedModel = zig.fit3))
+
+```
+
+Tech1
+```{r}
 
 #fit zero-inflated gamma model
-zig.fit5 <- glmmTMB(Relative_Dose ~ RADPAD*Procedure_Type + Weight + Time,
+zig.fit4 <- glmmTMB(Relative_Dose ~ RADPAD*Procedure_Type + Weight + Time,
                   ziformula = ~ 1+Procedure_Type,
                   family = ziGamma(link = "log"), 
                   data = tib_ %>% filter(Lab_Personnel == "Tech1"))
 
 #diagnostic plots
-plot(DHARMa:: simulateResiduals(fittedModel = zig.fit2))
-plot(DHARMa:: simulateResiduals(fittedModel = zig.fit3))
+
 plot(DHARMa:: simulateResiduals(fittedModel = zig.fit4))
-plot(DHARMa:: simulateResiduals(fittedModel = zig.fit5))
 ```
 
 
