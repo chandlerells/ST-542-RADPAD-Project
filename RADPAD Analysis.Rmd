@@ -13,6 +13,11 @@ library(readxl)
 library(tidyverse)
 library(lmtest)
 library(car)
+library(nlme)
+library(emmeans)
+library(statmod)
+library(tweedie)
+library(glmmTMB)
 #change default print option for tibbles to looking nicer when rendering to pdf
 print.tbl <- function(x, ...) {
   knitr::kable(x, format = "latex", booktabs = TRUE) %>%
@@ -432,6 +437,8 @@ From the two-way interaction plots, the lines indicated by RADPAD level do not c
 
 In this section, let's begin fitting models, analyzing the output, and checking assumptions.
 
+## ANCOVA & ANOVA Using Full Data Set
+
 To start, let's fit a model that includes all factors, their interaction, all covariates, original response, and no transformations.
 $$
 y_{ijkl} = \mu + \alpha_{i} + \beta_{j} + \gamma_{k} + (\alpha\beta)_{ij} + (\alpha\gamma)_{ik} + (\beta\gamma)_{jk} + (\alpha\beta\gamma)_{ijk} + \lambda_{1}x_{ijkl1} + \lambda_{2}x_{ijkl2} + \lambda_{3}x_{ijkl3} + e_{ijkl} 
@@ -596,7 +603,18 @@ plot(lm(box_transform(Relative_Exposure + 1, lambda_optimal) ~ RADPAD*Procedure_
 
 After trying to diagnose where the assumption violations start to occur, it appears in almost all cases the normality and constant variance assumptions will be violated, especially when lab personnel is included in the model. This makes sense because from the EDA, it was apparent the response, or any common transformation on the response, was not normal. Also there were significant differences in variation across factor levels.
 
-A few important reasons could be causing this:  
+If normality of residuals appears valid, generalized least squares can be used to relax error assumptions of independence and constant variance. Models where assumption of normality of residuals is clearly violated using a Box-Cox transformation include:  
+
+- All three factors, their interactions, and covariates, weight and time  
+- All three factors, no interactions, and covariates, weight and time  
+- All three factors and their interactions, no covariates  
+- All three factors, no interactions, no covariates  
+- All three factors and their interactions, no covariates, data filtered to remove TEE and tech1  
+- All three factors and their interactions, no covariates, data filtered to remove TEE, tech1, and Anesthesia   
+- All three factors and their interactions, no covariates, data filtered to remove TEE and tech1 and procedure type pv stent  
+- RADPAD and lab personnel, their interaction, covariates weight and time, procedure type filtered on PDA  
+
+A few important reasons why the normality and constant variance assumption of errors could be violated:  
 
 1. There are a significant amount of zeros in the data and the data is heavily skewed towards zero.  
 2. We are missing some other major factor or covariate, such as distance from the radiation source.  
@@ -604,9 +622,11 @@ A few important reasons could be causing this:
 4. Many of the lab personnel aside from resident 1 have questionable data. This is likely due to the distance of certain personnel within a fixed procedure being highly variable and not controlled for. Further, certain personnel are able to see real time their radiation exposure and adjust their position accordingly.  
 5. Not a randomized controlled experiment.  
 
-To conduct proper inference using a model with valid assumptions, we will likely need to do linear regression on a subset of the data, or relax the assumptions of normality, constant variance, etc., by using a general linear model and modeling the errors with some form of a zero inflated distribution. 
+To conduct proper inference using a model with valid assumptions, we will likely need to do linear regression on a subset of the data, or relax the assumptions of normality, constant variance, etc., by using a general linear model and modeling the errors with some form of a zero inflated distribution, or by using generalized least squares. 
 
-First, since analyzing the effect of RADPAD on radiation exposure for resident 1 is of primary interest and resident 1 does not have any zero values, let's filter the data set for just resident 1 and see if this improves model assumptions.
+### Filter Lab Personnel for Resident 1
+
+First, since analyzing the effect of RADPAD on radiation exposure for resident 1 is of primary interest and resident 1 does not have any zero values, let's filter the data set for just resident 1 and see if this improves model assumptions. Note that procedure type has a significant effect on weight and time.
 $$
 y_{ijk} = \mu + \alpha_{i} + \beta_{j} + (\alpha\beta)_{ij} + \lambda_{1}x_{ijkl1} + \lambda_{2}x_{ijkl2} + e_{ijk} 
 $$
@@ -617,17 +637,21 @@ $$
 \text{for} \ i = 1,2 \ (\text{RADPAD}), \ \ j = 1,2,3,4 \ (\text{procedure type})
 $$
 ```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#filter data for only resident 1
+res1 <- tib_ %>%
+  filter(Lab_Personnel == "Resident1") %>%
+  select(Relative_Exposure, RADPAD, Procedure_Type, Weight, Time)
 # Perform Box-Cox transformation on the response variable y
 bc <- MASS::boxcox(lm(Relative_Exposure ~  RADPAD * Procedure_Type + Weight + Time, 
-                      data = tib_ %>% filter(Lab_Personnel == "Resident1")), plotit = FALSE)
+                      data = res1), plotit = FALSE)
 # Extract the optimal lambda
 lambda_optimal <- bc$x[which.max(bc$y)]
-
+#fit model
 lm.fit <- lm(box_transform(Relative_Exposure, lambda_optimal) ~ RADPAD * Procedure_Type + Weight + Time, 
-             data = tib_ %>% filter(Lab_Personnel == "Resident1"))
-anova(lm.fit)
+             data = res1)
+#look at residual and qq plot
 par(mar = c(4, 4, 1.5, 1))
-plot(lm.fit, sub = "")
+plot(lm.fit, which = c(1,2), sub = "")
 ```
 
 Overall, the residual and QQ plots look significantly better. Let's use formal tests to check these as well.  
@@ -639,13 +663,202 @@ We will use:
 
 ```{r}
 #conduct Shapiro Test
-shapiro.test(resid(lm.fit))
+shapiro.test(rstandard(lm.fit))
 #conduct Durbin-Watson Test
 dwtest(lm(box_transform(Relative_Exposure, lambda_optimal) ~ RADPAD * Procedure_Type + Weight + Time, 
-          data = tib_ %>% filter(Lab_Personnel == "Resident1")))
+          data = res1))
 #conduct Breusch-Pagan Test
 bptest(lm.fit, studentize = TRUE)
 ```
+All of the tests came back insignificant except the Breusch-Pagan test. Since this test is significant, we reject the null using a significance level of 0.05 and conclude there is heteroskedasticity in the errors. Let's attempt to correct for this by assuming unequal error variance using generalized least squares. We can compare unequal error variance between only RADPAD levels, only procedure type levels, and combinations of RADPAD and procedure type levels using AIC. We can use AIC to compare models since the form of how the factors and covariates are included in the model is the same. 
+```{r}
+#create appropriate Box-Cox transformation of response to use in gls
+box <- box_transform(res1$Relative_Exposure, lambda_optimal)
+#ordinary least squares
+gls.fit <- gls(box ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = res1)
+#unequal variance between RADPAD levels
+gls.fit2 <- gls(box ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = res1,
+    weights = varIdent(form = ~ 1 | RADPAD))
+#unequal variance between procedure type levels
+gls.fit3 <- gls(box ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = res1,
+    weights = varIdent(form = ~ 1 | Procedure_Type))
+#unequal variance between combinations of RADPAD and procedure type levels
+gls.fit4 <- gls(box ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = res1,
+    weights = varIdent(form = ~ 1 | RADPAD*Procedure_Type))
+#output AIC for each of the models
+df <- AIC(gls.fit, gls.fit2, gls.fit3, gls.fit4)
+#change row names of data frame
+rownames(df) <- c("Equal Variance", "RADPAD Unequal Variance", "PType Unequal Variance", "RADPAD*PType Unequal Variance")
+#show results
+knitr::kable(df, format = "latex", booktabs = TRUE) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+#compare ols and unequal error variance for RADPAD levels with anova
+df <- anova(gls.fit, gls.fit2)
+#change row names of data frame
+rownames(df) <- c("Equal Variance", "RADPAD Unequal Variance")
+#show results
+df
+```
+It appears the model with the lowest AIC is the model that assumes unequal variance between RADPAD levels. This model also appears to improve the fit since the likelihood ratio test is significant when comparing the model which assumes unequal variance in RADPAD groups to the model which assumes equal variance between groups.
+
+Let's analyze the residual and QQ plots for the new model which assumes unequal variance between RADPAD groups.
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#get the residuals (standardized)
+residual <- residuals(gls.fit2, type = 'pearson')
+#get the fitted values
+fitted_values <- fitted(gls.fit2)
+#plot residuals vs fitted
+plot(fitted_values, residual, xlab = "Fitted values", ylab = "Pearson residuals", main = "Residuals vs Fitted", pch = 1, col = "dodgerblue")
+abline(h=0)
+#normal QQ plot
+qqnorm(residual, pch = 1, col = "dodgerblue")
+abline(0,1, lwd=2)
+```
+
+From the plots, it appears the normality assumption is valid and there does not need to be any more adjustment to the variance. Let's formalize by looking at the White test again. Testing for heteroskedasticity from a gls() object is challenging because most of the common tests (like the Breusch-Pagan test) are designed for lm() objects. However, we can still test for heteroskedasticity using the White test, which is adaptable to the residuals from a gls() object. The White test is a more general test for heteroskedasticity.
+```{r}
+white_test <- data.frame(
+  residuals = residual,
+  fitted_values = fitted_values)
+#conduct White Test
+bptest(I(residuals^2) ~ fitted_values + I(fitted_values^2), data = white_test)
+```
+The p-value is very high, therefore we fail to reject the null.
+
+Let's look at the anova table for the new model.
+```{r}
+#output anova table
+anova(gls.fit2)
+```
+RADPAD, procedure type, and weight are highly significant using a significance level of 0.05. Time and the interaction between RADPAD and procedure type are not significant using a significance level of 0.05.
+
+Let's analyze the main effect of RADPAD averaging over procedure type, holding constant weight and time at their average respective values, as well as simple effects of RADPAD within each procedure, holding constant weight and time at their average respective values. 
+```{r}
+# Compute contrasts
+emm1 <- emmeans(gls.fit2, ~ RADPAD, mode = "df.error")
+emm2 <- emmeans(gls.fit2, ~ RADPAD | Procedure_Type, mode = "df.error")
+c1 <- contrast(emm1, method = "pairwise")
+c2 <- contrast(emm2, method = "pairwise")
+#print summaries
+knitr::kable(as.data.frame(summary(c1, infer = c(TRUE, TRUE))), format = "latex", booktabs = TRUE) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+knitr::kable(as.data.frame(summary(c2, infer = c(TRUE, TRUE))), format = "latex", booktabs = TRUE) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+```
+
+Note this approach only works for resident 1. The model assumptions are still invalid using this approach for other important personnel such as resident 2, faculty, and anesthesia.
+
+## Generalized Linear Model
+
+
+### Tweedie Distribution
+Let's take a look again at the distribution of the relative exposure, this time let's overlay a smooth gamma distribution instead of a normal.
+```{r, fig.show = "hold", out.width = "100%", out.height = "35%"}
+#no transformations
+hist(tib_$Relative_Exposure + 1, breaks = 20, freq = FALSE, col = 'skyblue', main = 'No Transform', xlab = 'Relative Exposure')
+#fit gamma distribution
+gamma.fit <- MASS::fitdistr(tib_$Relative_Exposure + 1, densfun = "gamma")
+#estimate shape and rate paremeter
+shape <- gamma.fit$estimate["shape"]
+rate <- gamma.fit$estimate["rate"]
+#overlay smooth gamma desnity
+x <- seq(min(tib_$Relative_Exposure + 1), max(tib_$Relative_Exposure + 1), length = 100)
+gamma_density <- dgamma(x, shape = shape, rate = rate)
+lines(x, gamma_density, col = "blue", lwd = 2)
+```
+
+Clearly this distribution does not look normal. The majority of the values are at or very close to 0. The gamma distribution looks more appropriate, but unfortunately, a gamma distribution only has positive non-zero values. Because of this, let's fit a generalized linear model using the Tweedie distribution family. The Tweedie distribution is more appropriate because it takes on non-negative values. The model form will include two factor interactions between RADPAD and procedure type and RADPAD and lab personnel, as well as both covariates weight and time.
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#fit a GLM with tweedie family
+glm.fit <- tweedie_model <- glm(Relative_Exposure ~ RADPAD*Procedure_Type + RADPAD*Lab_Personnel + Weight + Time, 
+                     family = statmod::tweedie(var.power = 2, link.power = 0), 
+                     data = tib_)
+#plot output
+plot(glm.fit, which=c(1,2),  sub = "")
+#look at estimates
+summary(glm.fit)
+```
+
+### Zero-Inflated Gamma Distribution
+Let's also look at modeling a zero-inflated gamma distribution. This allows for modeling the zeros (zero inflated part) separate from the positive continuous values (here gamma). The model form will include two factor interactions between RADPAD and procedure type and RADPAD and lab personnel, as well as both covariates weight and time. The zero values will be modeling using an intercept and factoring in lab personnel.
+```{r}
+#fit zero-inflated gamma model
+zig.fit <- glmmTMB(Relative_Exposure ~ RADPAD*Procedure_Type + RADPAD*Lab_Personnel + Weight + Time,
+                  ziformula = ~ Lab_Personnel,
+                  family = ziGamma(link = "log"), 
+                  data = tib_)
+# Summary of the model
+summary(zig.fit)
+```
+Some of the key assumptions of this model are: 
+
+- There are more zeros in the data than would be expected from a standard gamma distribution.  
+- The positive, non-zero part of the data follows a gamma distribution.
+- Observations are independent of each other.  
+- Both the zero-inflation model and the gamma model are correctly specified. This includes the correct functional form and inclusion of relevant factors/covariates.
+
+Let's check some of these assumptions using plots.
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#calculate the observed proportion of zeros
+observed_zeros <- mean(tib_$Relative_Exposure == 0)
+#calculate the predicted proportion of zeros
+predicted_zeros <- mean(predict(zig.fit, type = "zprob"))
+#print the observed and predicted proportions
+list("Observed zeros" = observed_zeros, "Predicted zeros" = predicted_zeros)
+
+#plot the residuals
+plot(DHARMa:: simulateResiduals(fittedModel = zig.fit))
+
+#residuals vs. procedure plot
+DHARMa::plotResiduals(DHARMa:: simulateResiduals(fittedModel = zig.fit), form = tib_$Index)
+
+#extract positive values
+positive_values <- tib_$Relative_Exposure[tib_$Relative_Exposure > 0]
+#fit a gamma distribution to the positive values
+gamma_fit <- fitdistrplus::fitdist(positive_values, "gamma")
+#Q-Q plot for the gamma distribution
+fitdistrplus::qqcomp(list(gamma_fit))
+```
+
+Residual diagnostics show significant violations indicating model misfit, over dispersion and outliers present.
+
+Attempts that were made that did not help violated assumptions from plots: 
+
+- Remove interactions  
+- Adding more factors to zero inflated component  
+- Removing covariates  
+
+Two other points to note:
+
+- Unable able to add a random effect in glmmTMB for procedure index  
+- Tweedie distribution on positive continuous component has significant run-time and would not plot  
+
+Let's try and use the zero-inflated gamma, but this time filtered specifically on faculty and resident 2. Let's start with these two examples to see if filtering on the data improves the assumptions. The zero-inflated component will account for an intercept and the factor procedure type. The model form with have RADPAD and procedure type, their interaction, and both covariates weight and time.
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#fit zero-inflated gamma model
+zig.fit2 <- glmmTMB(Relative_Exposure ~ RADPAD*Procedure_Type + Weight + Time,
+                  ziformula = ~ Procedure_Type,
+                  family = ziGamma(link = "log"), 
+                  data = tib_ %>% filter(Lab_Personnel == "Faculty"))
+#fit zero-inflated gamma model
+zig.fit3 <- glmmTMB(Relative_Exposure ~ RADPAD*Procedure_Type + Weight + Time,
+                  ziformula = ~ Procedure_Type,
+                  family = ziGamma(link = "log"), 
+                  data = tib_ %>% filter(Lab_Personnel == "Resident2"))
+#diagnostic plots
+plot(DHARMa:: simulateResiduals(fittedModel = zig.fit2))
+plot(DHARMa:: simulateResiduals(fittedModel = zig.fit3))
+
+```
+
+Diagnostic plots look much better, but dispersion tests are still significant.
+
+
+
 
 
 
