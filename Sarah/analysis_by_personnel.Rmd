@@ -1,0 +1,171 @@
+---
+title: "RADPAD Analysis by Occupation"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(nlme)
+library(emmeans)
+library(lmtest)
+
+r <- read_csv("radpad.csv")
+r1 <- r |>
+  filter(Occupation == "Resident 1")
+r2 <- r |>
+  filter(Occupation == "Resident 2")
+rF <- r |>
+  filter(Occupation == "Faculty")
+rTee <- r |>
+  filter(Occupation == "TEE")
+rT <- r |>
+  filter(Occupation == "Tech 1")
+rA <- r |>
+  filter(Occupation == "Anesthesia")
+```
+
+## Resident 1 - OLS
+
+```{r}
+## boxcox transformation on Dose
+fit <- lm(Dose ~ RADPAD * Procedure + Weight + Time, data = r1)
+b <- MASS::boxcox(fit, plotit = FALSE)
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+
+## OLS Fit
+fit2 <- lm(tran$linkfun(Dose) ~ RADPAD*Procedure + Weight + Time,
+           data = r1)
+
+## emmeans on transformed scale
+em0 <- emmeans(fit2, ~RADPAD|Procedure)
+c0 <- contrast(em0, "revpairwise")
+c0 <- update(c0, side =  "<")
+
+## emmeans on response scale
+grid <- ref_grid(fit2)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure)
+c <- contrast(em, method = "revpairwise", infer = FALSE)
+c
+
+## residual plots
+plot(fit2, which = c(1,2))
+```
+
+\newpage 
+
+## Resident 2 - GLS
+
+```{r}
+## boxcox transformation on Dose
+fit <- lm(Dose+1 ~ RADPAD * Procedure  + Weight + Time, data = r2)
+b <- MASS::boxcox(fit, plotit = FALSE)
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+
+## GLS models under different variance structures
+gls.fit0 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure + Weight + Time,
+                data = r2,
+                weights = varIdent(form = ~ 1 | RADPAD))
+gls.fit1 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure  + Weight + Time,
+                data = r2,
+                weights = varIdent(form = ~ 1 | Procedure))
+gls.fit2 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure + Weight + Time,
+                data = r2,
+                weights = varIdent(form = ~ 1 | RADPAD*Procedure))
+
+## identify best model
+AIC(gls.fit0, gls.fit1, gls.fit2) ## lowest AIC for fit1
+
+## emmeans on transformed scale
+em0 <- emmeans(gls.fit1, ~RADPAD|Procedure)
+c0 <- contrast(em0, "revpairwise")
+c0 <- update(c0, side = "<")
+## emmeans on response scale
+grid <- ref_grid(gls.fit1)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure)
+contrast(em, method = "revpairwise", infer = FALSE)
+
+## residual plots
+plot(gls.fit1)
+qqnorm(gls.fit1, abline = c(0,1))
+```
+\newpage
+
+## Faculty - GLS
+
+```{r}
+## boxcox transformation on Dose
+fit <- lm(Dose+1 ~ RADPAD * Procedure  + Weight + Time, data = rF)
+b <- MASS::boxcox(fit, plotit = FALSE)
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+
+## GLS models under different variance structures
+gls.fit0 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure + Weight + Time,
+                data = rF,
+                weights = varIdent(form = ~ 1 | RADPAD))
+gls.fit1 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure  + Weight + Time,
+                data = rF,
+                weights = varIdent(form = ~ 1 | Procedure))
+gls.fit2 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure + Weight + Time,
+                data = rF,
+                weights = varIdent(form = ~ 1 | RADPAD*Procedure))
+
+## identify best model
+AIC(gls.fit0, gls.fit1, gls.fit2) ## lowest AIC for fit0
+
+## emmeans on transformed scale
+em0 <- emmeans(gls.fit0, ~RADPAD|Procedure)
+c0 <- contrast(em0, "revpairwise")
+c0 <- update(c0, side = "<")
+## emmeans on response scale
+grid <- ref_grid(gls.fit0)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure)
+contrast(em, method = "revpairwise", infer = FALSE)
+
+
+## residual plots
+plot(gls.fit0)
+qqnorm(gls.fit0, abline = c(0,1))
+```
+\newpage
+
+## TEE - GLS
+
+```{r}
+## boxcox transformation on Dose
+fit <- lm(Dose+1 ~ RADPAD * Procedure  + Weight + Time, data = rTee)
+b <- MASS::boxcox(fit, plotit = FALSE)
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+
+## GLS models under different variance structures
+gls.fit0 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure + Weight + Time,
+                data = rTee,
+                weights = varIdent(form = ~ 1 | RADPAD))
+gls.fit1 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure  + Weight + Time,
+                data = rTee,
+                weights = varIdent(form = ~ 1 | Procedure))
+gls.fit2 <- gls(tran$linkfun(Dose+1) ~ RADPAD*Procedure + Weight + Time,
+                data = rTee,
+                weights = varIdent(form = ~ 1 | RADPAD*Procedure))
+
+## identify best model
+AIC(gls.fit0, gls.fit1, gls.fit2) ## lowest AIC for fit1
+
+## emmeans on transformed scale
+em0 <- emmeans(gls.fit1, ~RADPAD|Procedure)
+c0 <- contrast(em0, "revpairwise")
+c0 <- update(c0, side = "<")
+## emmeans on response scale
+grid <- ref_grid(gls.fit1)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure)
+contrast(em, method = "revpairwise", infer = FALSE)
+
+## residual plots
+plot(gls.fit1)
+qqnorm(gls.fit1, abline = c(0,1))
+```
+
