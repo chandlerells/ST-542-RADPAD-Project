@@ -1,0 +1,685 @@
+---
+title: "The BEAMS Study - Baseline Evaluation And Management of Scatter radiation using RADPAD radiation absorbing drapes"
+author: "Analysis completed by Sarah Pagan, Angelice Floyd, and Chandler Ellsworth"
+output: pdf_document
+header-includes:
+  - \usepackage{float}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+#read in relevant packages
+library(readxl)
+library(tidyverse)
+library(lmtest)
+library(car)
+library(nlme)
+library(emmeans)
+library(statmod)
+library(tweedie)
+library(glmmTMB)
+library(clubSandwich)
+library(sandwich)
+#change default print option for tibbles to look nicer when rendering to pdf
+print.tbl <- function(x, ...) {
+  knitr::kable(x, format = "latex", booktabs = TRUE) %>%
+  kableExtra::kable_styling(latex_options = c("HOLD_position"))
+}
+```
+
+```{r}
+#read in data
+tib <- read_excel("RADPAD_DATA_FINAL_7_3_24.xlsx", skip = 1)
+```
+
+```{r}
+#select and rename relevant columns
+tib <- tib %>% 
+  select(`Weight (kg)`, `Procedure  type (BPV, PDA PMI, PV Stent)`, `RADPAD Drape Used? Y/N`, 
+         `Faculty`, `Tech 1`, `Resident 1`, `Resident 2`, `TEE`, `Anesthesia`, `Total fluoro time (min)`) %>% 
+  rename("Weight" = `Weight (kg)`, "Procedure_Type" = `Procedure  type (BPV, PDA PMI, PV Stent)`, 
+         "RADPAD" = `RADPAD Drape Used? Y/N`, "Tech1" = `Tech 1`, "Resident1" = `Resident 1`, 
+         "Resident2" = `Resident 2`, , "Time" = `Total fluoro time (min)`) %>%
+  mutate(Index = seq(1, nrow(tib), by = 1), Procedure_Type = ifelse(Procedure_Type == "PV stent", "PV Stent", Procedure_Type))
+#convert to character type
+tib[,c("Index", "Procedure_Type", "RADPAD", "Faculty", "Tech1", "Resident1", "Resident2", "TEE", "Anesthesia")]  <- 
+  lapply(tib[,c("Index", "Procedure_Type", "RADPAD", "Faculty", "Tech1", "Resident1", "Resident2", "TEE", "Anesthesia")] , as.character)
+#pivot data longer
+tib_ <- tib %>%
+  pivot_longer(cols = Faculty:Anesthesia, names_to = "Lab_Personnel", values_to = "Dose") %>%
+  select(Index, RADPAD, Procedure_Type, Lab_Personnel, Weight, Time, Dose)
+#remove relevant data
+tib_ <- tib_ %>%
+  filter((Dose != "n/a") & (Dose != "NB") & (Dose != "n /a")) %>%
+  mutate(Dose = as.numeric(Dose))
+
+#create function to apply the optimal lambda to transform the response variable using Box-Cox
+box_transform <- function(response, lambda) {
+  if (lambda == 0) {
+    response <- log(response)
+  } else {
+    response <- (response^lambda - 1) / lambda
+  }
+  return(response)
+}
+
+#create function to undo the Box-Cox transformation
+back_transform <- function(transformed_response, lambda) {
+  if (lambda == 0) {
+    # If lambda is zero, use the exponential function
+    original_response <- exp(transformed_response)
+  } else {
+    # Otherwise, use the inverse Box-Cox transformation formula
+    original_response <- (transformed_response * lambda + 1)^(1 / lambda)
+  }
+  return(original_response)
+}
+```
+
+## Resident 1
+```{r, echo = TRUE}
+#filter data for only resident 1
+res1 <- tib_ %>%
+  filter(Lab_Personnel == "Resident1")
+#perform Box-Cox transformation on dose
+bc <- MASS::boxcox(lm(Dose ~  RADPAD * Procedure_Type + Weight + Time, 
+                      data = res1), plotit = FALSE)
+#extract the optimal lambda
+lambda_optimal <- bc$x[which.max(bc$y)]
+#fit model
+lm.fit <- lm(box_transform(Dose, lambda_optimal) ~ RADPAD * Procedure_Type + Weight + Time, 
+             data = res1)
+#analyze anova table
+Anova(lm.fit, type = "III")
+```
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#look at residual and qq plot
+par(mar = c(4, 4, 1.5, 1))
+plot(lm.fit, which = c(1,2), sub = "")
+```
+
+### Numeric Summaries
+```{r}
+#calculate summary statistics
+summary_stats <- res1 %>% 
+  group_by(Procedure_Type, RADPAD) %>%
+  summarise(Mean = round(mean(Dose),3), Median = round(median(Dose),3), SD = round(sd(Dose),3))
+#print output
+print(summary_stats)
+#calculate difference and % changes
+print(summary_stats %>%
+  pivot_wider(names_from = RADPAD, values_from = c(Mean, Median, SD)) %>%
+  mutate(
+    Mean_Diff = Mean_Y - Mean_N,
+    Mean_Percent_Change = round((Mean_Y - Mean_N) / Mean_N * 100, 3),
+    Median_Diff = Median_Y - Median_N,
+    Median_Percent_Change = round((Median_Y - Median_N) / Median_N * 100, 3)) %>%
+  select(Procedure_Type, Mean_Diff, Mean_Percent_Change, Median_Diff, Median_Percent_Change))
+```
+
+### Marginal Effect of RADPAD
+```{r}
+#store Box-Cox transformation for back transformation to response scale
+tran <- make.tran("boxcox", bc$x[which.max(bc$y)])
+#emmeans on transformed scale
+em0 <- emmeans(lm.fit, ~ RADPAD)
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+
+#emmeans on response scale
+grid <- ref_grid(lm.fit)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD)
+c <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+#combine and print output
+print(bind_rows(as_tibble(c0) %>% mutate(Scale = "Box-Cox"), 
+          as_tibble(c)  %>% mutate(Scale = "response")))
+```
+
+### Simple Effect of RADPAD across Procedure Type
+```{r}
+#calculate procedure averages
+procedure_averages <- res1 %>%
+  group_by(Procedure_Type) %>%
+  summarise(avg_weight = mean(Weight), avg_time = mean(Time))
+#initialize an empty list to store adjusted means
+adj_mean_tran <- list()
+adj_mean_response <- list()
+#initialize an empty list to store contrasts
+contrast_tran <- list()
+contrast_response <- list()
+#loop over each Procedure_Type and calculate the contrasts
+for(i in seq_len(nrow(procedure_averages))) {
+    proc <- procedure_averages$Procedure_Type[i]
+    avg_weight <- procedure_averages$avg_weight[i]
+    avg_time <- procedure_averages$avg_time[i]
+    
+    #create reference grid for current Procedure_Type
+    grid <- ref_grid(lm.fit, at = list(Weight = avg_weight, Time = avg_time, Procedure_Type = proc))
+    
+    #get the estimated marginal means for RADPAD within the current Procedure_Type
+    em0 <- emmeans(grid, ~ RADPAD|Procedure_Type)
+    # Get the pairwise contrasts for RADPAD
+    c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+    #emmeans on response scale
+    rg <- update(grid, tran = tran)
+    em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD|Procedure_Type)
+    c <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+    #store the adjusted means in the list with the procedure type as the name
+    adj_mean_tran[[proc]] <- as_tibble(em0)
+    adj_mean_response[[proc]] <- as_tibble(em) %>% rename(emmean = "response")
+
+    #store the contrasts in the list with the procedure type as the name
+    contrast_tran[[proc]] <-as_tibble(c0)
+    contrast_response[[proc]] <- as_tibble(c)
+}
+#combine adjusted means and print output
+print(bind_rows(adj_mean_tran %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Box-Cox")),
+    adj_mean_response %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Response"))) %>%
+  mutate_if(is.numeric, round, digits = 4))
+#combine contrasts and print output
+print(bind_rows(contrast_tran %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Box-Cox")),
+    contrast_response %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Response"))) %>%
+  mutate_if(is.numeric, round, digits = 4))
+```
+
+## Resident 2
+```{r, echo = TRUE}
+#filter data for only resident 2
+res2 <- tib_ %>%
+  filter(Lab_Personnel == "Resident2")
+#perform Box-Cox transformation on the response variable y
+bc <- MASS::boxcox(lm(Dose ~  RADPAD * Procedure_Type + Weight + Time, 
+                      data = res2), plotit = FALSE)
+#extract the optimal lambda
+lambda_optimal <- bc$x[which.max(bc$y)]
+#fit model
+lm.fit <- lm(box_transform(Dose, lambda_optimal) ~ RADPAD * Procedure_Type + Weight + Time, 
+             data = res2)
+#analyze anova table
+Anova(lm.fit, type = "III")
+```
+
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#look at residual and qq plot
+par(mar = c(4, 4, 1.5, 1))
+plot(lm.fit, which = c(1,2), sub = "")
+```
+
+### Numeric Summaries
+```{r}
+#calculate summary statistics
+summary_stats <- res2 %>% 
+  group_by(Procedure_Type, RADPAD) %>%
+  summarise(Mean = round(mean(Dose),3), Median = round(median(Dose),3), SD = round(sd(Dose),3))
+#print output
+print(summary_stats)
+#calculate difference and % changes
+print(summary_stats %>%
+  pivot_wider(names_from = RADPAD, values_from = c(Mean, Median, SD)) %>%
+  mutate(
+    Mean_Diff = Mean_Y - Mean_N,
+    Mean_Percent_Change = round((Mean_Y - Mean_N) / Mean_N * 100, 3),
+    Median_Diff = Median_Y - Median_N,
+    Median_Percent_Change = round((Median_Y - Median_N) / Median_N * 100, 3)) %>%
+  select(Procedure_Type, Mean_Diff, Mean_Percent_Change, Median_Diff, Median_Percent_Change))
+```
+
+### Marginal Effect of RADPAD
+```{r}
+#store Box-Cox transformation for back transformation to response scale
+tran <- make.tran("boxcox", bc$x[which.max(bc$y)])
+#emmeans on transformed scale
+em0 <- emmeans(lm.fit, ~ RADPAD)
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+
+#emmeans on response scale
+grid <- ref_grid(lm.fit)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD)
+c <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+
+#combine and print
+print(bind_rows(as_tibble(c0) %>% mutate(Scale = "Box-Cox"), 
+          as_tibble(c)  %>% mutate(Scale = "response")))
+```
+
+### Simple Effect of RADPAD across Procedure Type
+```{r}
+#calculate procedure averages
+procedure_averages <- res2 %>%
+  group_by(Procedure_Type) %>%
+  summarise(avg_weight = mean(Weight), avg_time = mean(Time))
+#initialize an empty list to store adjusted means
+adj_mean_tran <- list()
+adj_mean_response <- list()
+#initialize an empty list to store contrasts
+contrast_tran <- list()
+contrast_response <- list()
+#loop over each Procedure_Type and calculate the contrasts
+for(i in seq_len(nrow(procedure_averages))) {
+    proc <- procedure_averages$Procedure_Type[i]
+    avg_weight <- procedure_averages$avg_weight[i]
+    avg_time <- procedure_averages$avg_time[i]
+    
+    #create reference grid for current Procedure_Type
+    grid <- ref_grid(lm.fit, at = list(Weight = avg_weight, Time = avg_time, Procedure_Type = proc))
+    
+    #get the estimated marginal means for RADPAD within the current Procedure_Type
+    em0 <- emmeans(grid, ~ RADPAD|Procedure_Type)
+    #get the pairwise contrasts for RADPAD
+    c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+    #emmeans on response scale
+    rg <- update(grid, tran = tran)
+    em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD|Procedure_Type)
+    c <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+    #store the adjusted means in the list with the procedure type as the name
+    adj_mean_tran[[proc]] <- as_tibble(em0)
+    adj_mean_response[[proc]] <- as_tibble(em) %>% rename(emmean = "response")
+
+    #store the contrasts in the list with the procedure type as the name
+    contrast_tran[[proc]] <-as_tibble(c0)
+    contrast_response[[proc]] <- as_tibble(c)
+}
+#combine adjusted means and print
+print(bind_rows(adj_mean_tran %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Box-Cox")),
+    adj_mean_response %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Response"))) %>%
+  mutate_if(is.numeric, round, digits = 4))
+#combine contrasts and print
+print(bind_rows(contrast_tran %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Box-Cox")),
+    contrast_response %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Response"))) %>%
+  mutate_if(is.numeric, round, digits = 4))
+```
+
+## Faculty
+```{r, echo = TRUE}
+#filter data for only faculty
+Faculty <- tib_ %>%
+  filter(Lab_Personnel == "Faculty")
+# Perform Box-Cox transformation on the response variable y
+bc <- MASS::boxcox(lm(Dose ~  RADPAD * Procedure_Type + Weight + Time, 
+                      data = Faculty), plotit = FALSE)
+#store Box-Cox transformation for back transformation to response scale
+tran <- make.tran("boxcox", bc$x[which.max(bc$y)])
+#ordinary least squares
+gls.fit <- gls(tran$linkfun(Dose) ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = Faculty)
+#unequal variance between RADPAD levels
+gls.fit2 <- gls(tran$linkfun(Dose) ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = Faculty,
+    weights = varIdent(form = ~ 1 | RADPAD))
+#unequal variance between procedure type levels
+gls.fit3 <- gls(tran$linkfun(Dose) ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = Faculty,
+    weights = varIdent(form = ~ 1 | Procedure_Type))
+#unequal variance between combinations of RADPAD and procedure type levels
+gls.fit4 <- gls(tran$linkfun(Dose) ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = Faculty,
+    weights = varIdent(form = ~ 1 | RADPAD*Procedure_Type))
+#output AIC for each of the models
+df <- AIC(gls.fit, gls.fit2, gls.fit3, gls.fit4)
+#change to tibble
+tib <- as_tibble(df) %>% 
+  mutate(Model = c("Equal Variance", "RADPAD Unequal Variance", "PType Unequal Variance", "RADPAD*PType Unequal Variance")) %>%
+  select(Model, df, AIC)
+#print tibble
+print(tib)
+#compare ols and unequal error variance for RADPAD levels with anova
+df <- anova(gls.fit, gls.fit2)
+#show results
+tib <- as_tibble(df)
+#change names of formula
+tib$call <- c("Equal Variance", "RADPAD Unequal Variance")
+#print tibble
+print(tib)
+#output ANOVA table
+Anova(gls.fit2, Type = "III")
+```
+
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#get the residuals (standardized)
+residual <- residuals(gls.fit2, type = 'pearson')
+#get the fitted values
+fitted_values <- fitted(gls.fit2)
+#plot residuals vs fitted
+plot(fitted_values, residual, xlab = "Fitted values", ylab = "Pearson residuals", main = "Residuals vs Fitted", pch = 1, col = "dodgerblue")
+abline(h=0)
+#normal QQ plot
+qqnorm(residual, pch = 1, col = "dodgerblue")
+abline(0,1, lwd=2)
+```
+
+### Numeric Summaries
+```{r}
+#calculate summary statistics
+summary_stats <- Faculty %>% 
+  group_by(Procedure_Type, RADPAD) %>%
+  summarise(Mean = round(mean(Dose),3), Median = round(median(Dose),3), SD = round(sd(Dose),3))
+#print output
+print(summary_stats)
+#calculate difference and % changes
+print(summary_stats %>%
+  pivot_wider(names_from = RADPAD, values_from = c(Mean, Median, SD)) %>%
+  mutate(
+    Mean_Diff = Mean_Y - Mean_N,
+    Mean_Percent_Change = round((Mean_Y - Mean_N) / Mean_N * 100, 3),
+    Median_Diff = Median_Y - Median_N,
+    Median_Percent_Change = round((Median_Y - Median_N) / Median_N * 100, 3)) %>%
+  select(Procedure_Type, Mean_Diff, Mean_Percent_Change, Median_Diff, Median_Percent_Change))
+```
+
+### Marginal Effect of RADPAD
+```{r}
+#emmeans on transformed scale
+em0 <- emmeans(gls.fit2, ~ RADPAD)
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+
+#emmeans on response scale
+grid <- ref_grid(gls.fit2)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD)
+c <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+
+#combine and print
+print(bind_rows(as_tibble(c0) %>% mutate(Scale = "Box-Cox"), 
+          as_tibble(c)  %>% mutate(Scale = "response")))
+```
+
+### Simple Effect of RADPAD across Procedure Type
+```{r}
+#calculate procedure averages
+procedure_averages <- Faculty %>%
+  group_by(Procedure_Type) %>%
+  summarise(avg_weight = mean(Weight), avg_time = mean(Time))
+#initialize an empty list to store adjusted means
+adj_mean_tran <- list()
+adj_mean_response <- list()
+#initialize an empty list to store contrasts
+contrast_tran <- list()
+contrast_response <- list()
+#loop over each Procedure_Type and calculate the contrasts
+for(i in seq_len(nrow(procedure_averages))) {
+    proc <- procedure_averages$Procedure_Type[i]
+    avg_weight <- procedure_averages$avg_weight[i]
+    avg_time <- procedure_averages$avg_time[i]
+    
+    #create reference grid for current Procedure_Type
+    grid <- ref_grid(gls.fit2, at = list(Weight = avg_weight, Time = avg_time, Procedure_Type = proc))
+    
+    #get the estimated marginal means for RADPAD within the current Procedure_Type
+    em0 <- emmeans(grid, ~ RADPAD|Procedure_Type)
+    #get the pairwise contrasts for RADPAD
+    c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+    #emmeans on response scale
+    rg <- update(grid, tran = tran)
+    em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD|Procedure_Type)
+    c <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+    # Store the adjusted means in the list with the procedure type as the name
+    adj_mean_tran[[proc]] <- as_tibble(em0)
+    adj_mean_response[[proc]] <- as_tibble(em) %>% rename(emmean = "response")
+
+    #store the contrasts in the list with the procedure type as the name
+    contrast_tran[[proc]] <-as_tibble(c0)
+    contrast_response[[proc]] <- as_tibble(c)
+}
+#combine adjusted means and print
+print(bind_rows(adj_mean_tran %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Box-Cox")),
+    adj_mean_response %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Response"))) %>%
+  mutate_if(is.numeric, round, digits = 4))
+#combine contrasts and print
+print(bind_rows(contrast_tran %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Box-Cox")),
+    contrast_response %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Response"))) %>%
+  mutate_if(is.numeric, round, digits = 4))
+```
+
+## TEE
+```{r, echo = TRUE}
+#filter data for only TEE
+TEE <- tib_ %>%
+  filter(Lab_Personnel == "TEE")
+# Perform Box-Cox transformation on the response variable y
+bc <- MASS::boxcox(lm(Dose ~  RADPAD * Procedure_Type + Weight + Time, 
+                      data = TEE), plotit = FALSE)
+#store Box-Cox transformation for back transformation to response scale
+tran <- make.tran("boxcox", bc$x[which.max(bc$y)])
+#ordinary least squares
+gls.fit <- gls(tran$linkfun(Dose) ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = TEE)
+#unequal variance between RADPAD levels
+gls.fit2 <- gls(tran$linkfun(Dose) ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = TEE,
+    weights = varIdent(form = ~ 1 | RADPAD))
+#unequal variance between procedure type levels
+gls.fit3 <- gls(tran$linkfun(Dose) ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = TEE,
+    weights = varIdent(form = ~ 1 | Procedure_Type))
+#unequal variance between combinations of RADPAD and procedure type levels
+gls.fit4 <- gls(tran$linkfun(Dose) ~ RADPAD * Procedure_Type + Weight + Time, 
+    data = TEE,
+    weights = varIdent(form = ~ 1 | RADPAD*Procedure_Type))
+#output AIC for each of the models
+df <- AIC(gls.fit, gls.fit2, gls.fit3, gls.fit4)
+#change to tibble
+tib <- as_tibble(df) %>% 
+  mutate(Model = c("Equal Variance", "RADPAD Unequal Variance", "PType Unequal Variance", "RADPAD*PType Unequal Variance")) %>%
+  select(Model, df, AIC)
+#print tibble
+print(tib)
+#compare ols and unequal error variance for procedure type levels with anova
+df <- anova(gls.fit, gls.fit3)
+#show results
+tib <- as_tibble(df)
+#change names of formula
+tib$call <- c("Equal Variance", "RADPAD Unequal Variance")
+#print tibble
+print(tib)
+#output ANOVA table
+Anova(gls.fit2, Type = "III")
+```
+
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#get the residuals (standardized)
+residual <- residuals(gls.fit3, type = 'pearson')
+#get the fitted values
+fitted_values <- fitted(gls.fit3)
+#plot residuals vs fitted
+plot(fitted_values, residual, xlab = "Fitted values", ylab = "Pearson residuals", main = "Residuals vs Fitted", pch = 1, col = "dodgerblue")
+abline(h=0)
+#normal QQ plot
+qqnorm(residual, pch = 1, col = "dodgerblue")
+abline(0,1, lwd=2)
+```
+
+### Numeric Summaries
+```{r}
+#calculate summary statistics
+summary_stats <- TEE %>% 
+  group_by(Procedure_Type, RADPAD) %>%
+  summarise(Mean = round(mean(Dose),3), Median = round(median(Dose),3), SD = round(sd(Dose),3))
+#print output
+print(summary_stats)
+#calculate difference and % changes
+print(summary_stats %>%
+  pivot_wider(names_from = RADPAD, values_from = c(Mean, Median, SD)) %>%
+  mutate(
+    Mean_Diff = Mean_Y - Mean_N,
+    Mean_Percent_Change = round((Mean_Y - Mean_N) / Mean_N * 100, 3),
+    Median_Diff = Median_Y - Median_N,
+    Median_Percent_Change = round((Median_Y - Median_N) / Median_N * 100, 3)) %>%
+  select(Procedure_Type, Mean_Diff, Mean_Percent_Change, Median_Diff, Median_Percent_Change))
+```
+
+### Marginal Effect of RADPAD
+```{r}
+#emmeans on transformed scale
+em0 <- emmeans(gls.fit3, ~ RADPAD)
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+
+#emmeans on response scale
+grid <- ref_grid(gls.fit3)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD)
+c <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+
+#combine and print
+print(bind_rows(as_tibble(c0) %>% mutate(Scale = "Box-Cox"), 
+          as_tibble(c)  %>% mutate(Scale = "response")))
+```
+
+### Simple Effect of RADPAD across Procedure Type
+```{r}
+#calculate procedure averages
+procedure_averages <- TEE %>%
+  group_by(Procedure_Type) %>%
+  summarise(avg_weight = mean(Weight), avg_time = mean(Time))
+#initialize an empty list to store adjusted means
+adj_mean_tran <- list()
+adj_mean_response <- list()
+#initialize an empty list to store contrasts
+contrast_tran <- list()
+contrast_response <- list()
+# Loop over each Procedure_Type and calculate the contrasts
+for(i in seq_len(nrow(procedure_averages))) {
+    proc <- procedure_averages$Procedure_Type[i]
+    avg_weight <- procedure_averages$avg_weight[i]
+    avg_time <- procedure_averages$avg_time[i]
+    
+    # Create reference grid for current Procedure_Type
+    grid <- ref_grid(gls.fit3, at = list(Weight = avg_weight, Time = avg_time, Procedure_Type = proc))
+    
+    # Get the estimated marginal means for RADPAD within the current Procedure_Type
+    em0 <- emmeans(grid, ~ RADPAD|Procedure_Type)
+    # Get the pairwise contrasts for RADPAD
+    c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+    #emmeans on response scale
+    rg <- update(grid, tran = tran)
+    em <- emmeans(regrid(rg, transform = "response"), ~ RADPAD|Procedure_Type)
+    c <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+    # Store the adjusted means in the list with the procedure type as the name
+    adj_mean_tran[[proc]] <- as_tibble(em0)
+    adj_mean_response[[proc]] <- as_tibble(em) %>% rename(emmean = "response")
+
+    # Store the contrasts in the list with the procedure type as the name
+    contrast_tran[[proc]] <-as_tibble(c0)
+    contrast_response[[proc]] <- as_tibble(c)
+}
+#combine adjusted means and print
+print(bind_rows(adj_mean_tran %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Box-Cox")),
+    adj_mean_response %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Response"))) %>%
+  mutate_if(is.numeric, round, digits = 4))
+#combine contrasts and print
+print(bind_rows(contrast_tran %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Box-Cox")),
+    contrast_response %>%
+    imap_dfr(~ .x %>% mutate(Procedure_Type = .y, Scale = "Response"))) %>%
+  mutate_if(is.numeric, round, digits = 4))
+```
+
+## Anesthesia
+```{r, echo = TRUE}
+#filter data for only anesthesia
+anesthesia <- tib_ %>%
+  filter(Lab_Personnel == "Anesthesia")
+#fit a GLM with tweedie family
+glm.fit <- glm(Dose ~ RADPAD*Procedure_Type + Weight + Time, 
+                     family = Gamma(link = "log"), 
+                     data = anesthesia)
+#look at estimates
+Anova(glm.fit, type = "III", white.adjust = TRUE)
+```
+
+```{r, fig.show = "hold", out.width = "100%", out.height = "46%"}
+#look at diagnostic plots
+plot(DHARMa:: simulateResiduals(fittedModel = glm.fit))
+#plot deviance residuals versus fitted values
+plot(residuals(glm.fit) ~ predict(glm.fit, type = "link"),
+     xlab = expression(hat(eta)), ylab = "Deviance residuals")
+#qqnorm of deviance residuals
+qqnorm(residuals(glm.fit))
+qqline(residuals(glm.fit))
+```
+
+### Numeric Summaries
+```{r}
+#calculate summary statistics
+summary_stats <- anesthesia %>% 
+  group_by(Procedure_Type, RADPAD) %>%
+  summarise(Mean = round(mean(Dose),3), Median = round(median(Dose),3), SD = round(sd(Dose),3))
+#print output
+print(summary_stats)
+#calculate difference and % changes
+print(summary_stats %>%
+  pivot_wider(names_from = RADPAD, values_from = c(Mean, Median, SD)) %>%
+  mutate(
+    Mean_Diff = Mean_Y - Mean_N,
+    Mean_Percent_Change = round((Mean_Y - Mean_N) / Mean_N * 100, 3),
+    Median_Diff = Median_Y - Median_N,
+    Median_Percent_Change = round((Median_Y - Median_N) / Median_N * 100, 3)) %>%
+  select(Procedure_Type, Mean_Diff, Mean_Percent_Change, Median_Diff, Median_Percent_Change))
+```
+
+### Marginal Effect of RADPAD
+```{r}
+em0 <- emmeans(glm.fit, ~ RADPAD|Procedure_Type, vcov. = vcovHC(glm.fit, type = "HC3"))
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
+c0
+
+#bind_rows(as.data.frame(c0) %>% mutate(Scale = "Box-Cox"), 
+          #as.data.frame(c)  %>% mutate(Scale = "resonse"))
+```
+
+## GLM on all but Tech1
+```{r, echo = TRUE}
+#filter data to not include Tech1
+noTech <- tib_ %>% filter(Lab_Personnel != "Tech1")
+#fit model
+glm.fit <- glm(Dose ~ RADPAD*Procedure_Type*Lab_Personnel + Weight + Time, 
+                     family = Gamma(link = "log"), 
+                     data = noTech)
+```
+
+```{r, , fig.show = "hold", out.width = "100%", out.height = "46%"}
+#look at diagnostic plots
+plot(DHARMa:: simulateResiduals(fittedModel = glm.fit))
+#plot deviance residuals versus fitted values
+plot(residuals(glm.fit) ~ predict(glm.fit, type = "link"),
+     xlab = expression(hat(eta)), ylab = "Deviance residuals")
+#qqnorm of deviance residuals
+qqnorm(residuals(glm.fit))
+qqline(residuals(glm.fit))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
