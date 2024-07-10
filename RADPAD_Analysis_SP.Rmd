@@ -1,0 +1,392 @@
+---
+title: "RADPAD Data Analysis"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      out.width = "50%", out.height = "50%")
+```
+
+## Libraries
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(emmeans)
+library(nlme)
+library(DHARMa)
+```
+
+## Data Processing
+
+```{r}
+radpad <- read_excel("RADPAD_DATA_FINAL_7_3_24.xlsx", skip = 1)
+r <- radpad |>
+  select(`Weight (kg)`, `Procedure  type (BPV, PDA PMI, PV Stent)`,
+         `RADPAD Drape Used? Y/N`, `Faculty`, `Tech 1`, `Resident 1`,
+         `Resident 2`, `TEE`, `Anesthesia`, `Total fluoro time (min)`) |>
+  mutate(ID = 1:nrow(radpad)) |>
+  rename(Weight = `Weight (kg)`) |>
+  rename(Procedure_Type = `Procedure  type (BPV, PDA PMI, PV Stent)`) |>
+  mutate(Procedure_Type = replace(Procedure_Type,
+                                  Procedure_Type == "PV stent",
+                                  "PV Stent")) |>
+  rename(Time = `Total fluoro time (min)`) |>
+  rename(RADPAD = `RADPAD Drape Used? Y/N`) |>
+  mutate(`Resident 1` = as.character(`Resident 1`)) |>
+  pivot_longer(Faculty:Anesthesia,
+               names_to = "Lab_Personnel",
+               values_to = "Dose") |>
+  filter((Dose != "n/a") & (Dose != "NB")) |>
+  mutate(Dose = as.numeric(Dose))
+```
+\newpage
+
+## Subset Data by Lab Personnel
+
+```{r}
+r1 <- r |>
+  filter(Lab_Personnel == "Resident 1")
+r2 <- r |>
+  filter(Lab_Personnel == "Resident 2")
+rF <- r |>
+  filter(Lab_Personnel == "Faculty")
+rTee <- r |>
+  filter(Lab_Personnel == "TEE")
+rTech <- r |>
+  filter(Lab_Personnel == "Tech 1")
+rA <- r |>
+  filter(Lab_Personnel == "Anesthesia")
+```
+
+\newpage 
+
+## Resident 1: ANCOVA
+
+```{r}
+## fit OLS model
+fit <- lm(Dose ~ RADPAD * Procedure_Type + Weight + Time, data = r1)
+## get box cox transformation for Dose
+b <- MASS::boxcox(fit, plotit = FALSE)
+## make transformation
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+## fit model with box cox transformation
+fit_r1 <- lm(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+             data = r1)
+
+## RADPAD by Procedure Type effect on transformed scale
+em0 <- emmeans(fit_r1, ~RADPAD|Procedure_Type)
+c0 <- contrast(em0, "revpairwise")
+data.frame(c0) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD by Procedure Type effect on response scale
+grid <- ref_grid(fit_r1)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
+c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c1) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD main effect on transformed scale
+em2 <- emmeans(fit_r1, ~RADPAD)
+c2 <- contrast(em2, "revpairwise")
+data.frame(c2) |>
+  kable() |>
+  kable_styling()
+
+## RADPAD main effect on response scale
+em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
+c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c3) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+```
+
+\newpage
+
+## Resident 2: ANCOVA
+
+```{r}
+## fit OLS model
+fit <- lm(Dose ~ RADPAD * Procedure_Type + Weight + Time, data = r2)
+## get box cox transformation for Dose
+b <- MASS::boxcox(fit, plotit = FALSE)
+## make transformation
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+## fit model with box cox transformation
+fit_r2 <- lm(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+             data = r2)
+
+## RADPAD by Procedure Type effect on transformed scale
+em0 <- emmeans(fit_r2, ~RADPAD|Procedure_Type)
+c0 <- contrast(em0, "revpairwise")
+data.frame(c0) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD by Procedure Type effect on response scale
+grid <- ref_grid(fit_r2)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
+c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c1) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD main effect on transformed scale
+em2 <- emmeans(fit_r2, ~RADPAD)
+c2 <- contrast(em2, "revpairwise")
+data.frame(c2) |>
+  kable() |>
+  kable_styling()
+
+## RADPAD main effect on response scale
+em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
+c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c3) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+```
+
+\newpage
+
+## Faculty: GLS
+
+```{r}
+## fit OLS model
+fit <- lm(Dose ~ RADPAD * Procedure_Type + Weight + Time, data = rF)
+## get box cox transformation for Dose
+b <- MASS::boxcox(fit, plotit = FALSE)
+## make transformation
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+
+## fit GLS models under different variance structures with box cox transformation
+gls_fit0 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rF)
+gls_fit1 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rF,
+                weights = varIdent(form = ~ 1 | RADPAD))
+gls_fit2 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type  + Weight + Time,
+                data = rF,
+                weights = varIdent(form = ~ 1 | Procedure_Type))
+gls_fit3 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rF,
+                weights = varIdent(form = ~ 1 | RADPAD*Procedure_Type))
+aic_results <- AIC(gls_fit0, gls_fit1, gls_fit2, gls_fit3)
+
+## identify best model using AIC criterion
+data.frame(aic_results) |>
+  kable() |>
+  kable_styling()
+## best model is gls_fit1 wit RADPAD unequal variance
+fit_rF <- gls_fit1
+
+## RADPAD by Procedure Type effect on transformed scale
+em0 <- emmeans(fit_rF, ~RADPAD|Procedure_Type)
+c0 <- contrast(em0, "revpairwise")
+data.frame(c0) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD by Procedure Type effect on response scale
+grid <- ref_grid(fit_rF)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
+c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c1) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD main effect on transformed scale
+em2 <- emmeans(fit_rF, ~RADPAD)
+c2 <- contrast(em2, "revpairwise")
+data.frame(c2) |>
+  kable() |>
+  kable_styling()
+
+## RADPAD main effect on response scale
+em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
+c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c3) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+```
+
+\newpage
+
+## TEE: GLS
+
+```{r}
+## fit OLS model
+fit <- lm(Dose ~ RADPAD * Procedure_Type + Weight + Time, data = rTee)
+## get box cox transformation for Dose
+b <- MASS::boxcox(fit, plotit = FALSE)
+## make transformation
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+
+## fit GLS models under different variance structures with box cox transformation
+gls_fit0 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rTee)
+gls_fit1 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rTee,
+                weights = varIdent(form = ~ 1 | RADPAD))
+gls_fit2 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type  + Weight + Time,
+                data = rTee,
+                weights = varIdent(form = ~ 1 | Procedure_Type))
+gls_fit3 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rTee,
+                weights = varIdent(form = ~ 1 | RADPAD*Procedure_Type))
+aic_results <- AIC(gls_fit0, gls_fit1, gls_fit2, gls_fit3)
+
+## identify best model using AIC criterion
+data.frame(aic_results) |>
+  kable() |>
+  kable_styling()
+## best model is gls_fit1 wit RADPAD unequal variance
+fit_rTee <- gls_fit1
+
+## RADPAD by Procedure Type effect on transformed scale
+em0 <- emmeans(fit_rTee, ~RADPAD|Procedure_Type)
+c0 <- contrast(em0, "revpairwise")
+data.frame(c0) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD by Procedure Type effect on response scale
+grid <- ref_grid(fit_rTee)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
+c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c1) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD main effect on transformed scale
+em2 <- emmeans(fit_rTee, ~RADPAD)
+c2 <- contrast(em2, "revpairwise")
+data.frame(c2) |>
+  kable() |>
+  kable_styling()
+
+## RADPAD main effect on response scale
+em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
+c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c3) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+```
+
+\newpage
+
+## Anesthesia: Gamma GLM
+
+```{r}
+## fit gamma GLM
+fit_A <- glm(Dose ~ RADPAD * Procedure_Type + Weight + Time,
+             family = Gamma(link = "log"),
+             data = rA)
+
+## RADPAD by Procedure Type effect on transformed scale
+em0 <- emmeans(fit_A, ~RADPAD|Procedure_Type)
+c0 <- contrast(em0, "revpairwise")
+data.frame(c0) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD by Procedure Type effect on response scale
+grid <- ref_grid(fit_A)
+rg <- update(grid, tran = tran)
+em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
+c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c1) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+
+## RADPAD main effect on transformed scale
+em2 <- emmeans(fit_A, ~RADPAD)
+c2 <- contrast(em2, "revpairwise")
+data.frame(c2) |>
+  kable() |>
+  kable_styling()
+
+## RADPAD main effect on response scale
+em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
+c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
+data.frame(c3) |>
+  select(-df) |>
+  kable(round = 3) |>
+  kable_styling()
+```
+
+\newpage
+
+## Resiudal Analysis
+
+### Resident 1
+```{r}
+plot(fit_r1, which = c(1,2))
+```
+
+### Resident 2
+```{r}
+plot(fit_r2, which = c(1,2))
+```
+
+\newpage
+
+### Faculty
+
+```{r}
+plot(fit_rF)
+qqnorm(residuals(fit_rF, type = "pearson"))
+qqline(residuals(fit_rF, type = "pearson"))
+```
+
+\newpage
+
+### Tee
+
+```{r}
+plot(fit_rTee)
+qqnorm(residuals(fit_rTee, type = "pearson"))
+qqline(residuals(fit_rTee, type = "pearson"))
+```
+
+\newpage
+
+## Anesthesia
+
+```{r, out.width = "100%", out.height="100%"}
+plot(simulateResiduals(fit_A))
+```
+
+\newpage
+
+## Numeric Summaries
+
+```{r}
+r |>
+  group_by(Lab_Personnel, Procedure_Type, RADPAD) |>
+  summarise(Count = n(),
+            Mean = mean(Dose),
+            Median = median(Dose),
+            SD = sd(Dose), Min = min(Dose),
+            Max = max(Dose)) |>
+  kable(digits = 3) |>
+  kable_styling()
+```
