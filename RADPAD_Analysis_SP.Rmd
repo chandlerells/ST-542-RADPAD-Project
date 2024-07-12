@@ -1,28 +1,28 @@
 ---
 title: "RADPAD Data Analysis"
+author: "Chandler Ellsworth, Angelice Floyd, and Sarah Pagan"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
                       out.width = "50%", out.height = "50%")
 ```
 
-## Libraries
-
 ```{r}
+## libraries
 library(readxl)
 library(tidyverse)
 library(knitr)
 library(kableExtra)
+library(car)
 library(emmeans)
 library(nlme)
 library(DHARMa)
 ```
 
-## Data Processing
-
 ```{r}
+## data processing
 radpad <- read_excel("RADPAD_DATA_FINAL_7_3_24.xlsx", skip = 1)
 r <- radpad |>
   select(`Weight (kg)`, `Procedure  type (BPV, PDA PMI, PV Stent)`,
@@ -43,11 +43,9 @@ r <- radpad |>
   filter((Dose != "n/a") & (Dose != "NB")) |>
   mutate(Dose = as.numeric(Dose))
 ```
-\newpage
-
-## Subset Data by Lab Personnel
 
 ```{r}
+## subset data by lab personnel
 r1 <- r |>
   filter(Lab_Personnel == "Resident 1")
 r2 <- r |>
@@ -62,61 +60,94 @@ rA <- r |>
   filter(Lab_Personnel == "Anesthesia")
 ```
 
-\newpage 
+## Resident 1
 
-## Resident 1: ANCOVA
+### Observed Difference in Median Dose
+
+```{r}
+r1 |>
+  group_by(Procedure_Type) |>
+  summarise(NODPAD = median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE),
+            RADPAD = median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE)) |>
+  mutate(Difference = RADPAD - NODPAD) |> 
+  mutate(Perecent = Difference/NODPAD*100) |>
+  kable(digits = 2, caption = "Median Dose (microSV) Statistics for Resident 1",
+        col.names = c("Procedure", "Median NOPAD", "Median RADPAD",
+                      "Difference", "Percent Change"))|>
+  kable_styling()
+```
+
+### ANCOVA Model Analysis of Variance
 
 ```{r}
 ## fit OLS model
-fit <- lm(Dose ~ RADPAD * Procedure_Type + Weight + Time, data = r1)
-## get box cox transformation for Dose
-b <- MASS::boxcox(fit, plotit = FALSE)
-## make transformation
-tran <- make.tran("boxcox", b$x[which.max(b$y)])
-## fit model with box cox transformation
-fit_r1 <- lm(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
-             data = r1)
+fit_r1 <- lm(log(Dose) ~ RADPAD * Procedure_Type + Weight + Time, data = r1)
+Anova(fit_r1, type = "III") |>
+  kable(digits = 3, caption = "Resident 1 Analysis of Variance")
+```
 
-## RADPAD by Procedure Type effect on transformed scale
+### Contrasts 
+
+```{r}
+## RADPAD by Procedure Type effect on log scale
 em0 <- emmeans(fit_r1, ~RADPAD|Procedure_Type)
-c0 <- contrast(em0, "revpairwise")
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c0) |>
-  kable(round = 3) |>
+  kable(digits = 3,
+        caption = "Resident 1 RADPAD by Procedure Type Contrast on Log Scale") |>
   kable_styling()
 
-## RADPAD by Procedure Type effect on response scale
-grid <- ref_grid(fit_r1)
-rg <- update(grid, tran = tran)
-em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
-c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+## RADPAD by Procedure Type effect ratio
+em <- emmeans(fit_r1, type = "response", ~RADPAD|Procedure_Type)
+c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c1) |>
   select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3,
+        caption = "Resident 1 RADPAD by Procedure Type Contrast, Ratio of Geometric Means") |>
   kable_styling()
 
-## RADPAD main effect on transformed scale
+## RADPAD main effect on log scale
 em2 <- emmeans(fit_r1, ~RADPAD)
-c2 <- contrast(em2, "revpairwise")
+c2 <- contrast(em2, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c2) |>
-  kable() |>
+  kable(digits = 3, caption = "Resident 1 RADPAD Contrast on Log Scale") |>
   kable_styling()
 
-## RADPAD main effect on response scale
-em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
-c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
+## RADPAD main effect ratio
+em3 <- emmeans(fit_r1, type = "response", ~RADPAD)
+c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c3) |>
   select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3,
+        caption = "Resident 1 RADPAD Contrast, Ratio of Geometric Means") |>
   kable_styling()
 ```
 
 \newpage
 
-## Resident 2: ANCOVA
+## Resident 2
+
+### Observed Difference in Median Dose
+
+```{r}
+r2 |>
+  group_by(Procedure_Type) |>
+  summarise(NODPAD = median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE),
+            RADPAD = median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE)) |>
+  mutate(Difference = RADPAD - NODPAD) |> 
+  mutate(Perecent = Difference/NODPAD*100) |>
+  kable(digits = 2, caption = "Median Dose (microSV) Statistics for Resident 2",
+        col.names = c("Procedure", "Median NOPAD", "Median RADPAD",
+                      "Difference", "Percent Change"))|>
+  kable_styling()
+```
+
+### ANCOVA Model Analysis of Variance
 
 ```{r}
 ## fit OLS model
 fit <- lm(Dose ~ RADPAD * Procedure_Type + Weight + Time, data = r2)
+
 ## get box cox transformation for Dose
 b <- MASS::boxcox(fit, plotit = FALSE)
 ## make transformation
@@ -124,43 +155,49 @@ tran <- make.tran("boxcox", b$x[which.max(b$y)])
 ## fit model with box cox transformation
 fit_r2 <- lm(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
              data = r2)
+Anova(fit_r2, type = "III") |>
+  kable(digits = 3, caption = "Resident 2 Analysis of Variance")
+```
 
+### Contrasts
+
+```{r}
 ## RADPAD by Procedure Type effect on transformed scale
 em0 <- emmeans(fit_r2, ~RADPAD|Procedure_Type)
-c0 <- contrast(em0, "revpairwise")
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c0) |>
-  kable(round = 3) |>
-  kable_styling()
-
-## RADPAD by Procedure Type effect on response scale
-grid <- ref_grid(fit_r2)
-rg <- update(grid, tran = tran)
-em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
-c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
-data.frame(c1) |>
-  select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3,
+        caption = "Resident 2 RADPAD by Procedure Type Contrast on Box-Cox Scale") |>
   kable_styling()
 
 ## RADPAD main effect on transformed scale
 em2 <- emmeans(fit_r2, ~RADPAD)
-c2 <- contrast(em2, "revpairwise")
+c2 <- contrast(em2, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c2) |>
-  kable() |>
-  kable_styling()
-
-## RADPAD main effect on response scale
-em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
-c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
-data.frame(c3) |>
-  select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3, caption = "Resident 2 RADPAD Contrast on Box-Cox Scale") |>
   kable_styling()
 ```
 
 \newpage
 
-## Faculty: GLS
+## Faculty
+
+### Observed Difference in Median Dose
+
+```{r}
+rF |>
+  group_by(Procedure_Type) |>
+  summarise(NODPAD = median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE),
+            RADPAD = median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE)) |>
+  mutate(Difference = RADPAD - NODPAD) |> 
+  mutate(Perecent = Difference/NODPAD*100) |>
+  kable(digits = 2, caption = "Median Dose (microSV) Statistics for Faculty",
+        col.names = c("Procedure", "Median NOPAD", "Median RADPAD",
+                      "Difference", "Percent Change"))|>
+  kable_styling()
+```
+
+### GLS Model Analysis of Variance
 
 ```{r}
 ## fit OLS model
@@ -182,51 +219,54 @@ gls_fit2 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type  + Weight + Time,
 gls_fit3 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
                 data = rF,
                 weights = varIdent(form = ~ 1 | RADPAD*Procedure_Type))
-aic_results <- AIC(gls_fit0, gls_fit1, gls_fit2, gls_fit3)
-
 ## identify best model using AIC criterion
-data.frame(aic_results) |>
-  kable() |>
-  kable_styling()
-## best model is gls_fit1 wit RADPAD unequal variance
+aic_results <- AIC(gls_fit0, gls_fit1, gls_fit2, gls_fit3)
+## best model is gls_fit1 with RADPAD unequal variance
 fit_rF <- gls_fit1
 
+Anova(fit_rF, type = "III") |>
+  kable(digits = 3, caption = "Faculty Analysis of Variance")
+```
+
+### Contrasts 
+
+```{r}
 ## RADPAD by Procedure Type effect on transformed scale
 em0 <- emmeans(fit_rF, ~RADPAD|Procedure_Type)
-c0 <- contrast(em0, "revpairwise")
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c0) |>
-  kable(round = 3) |>
-  kable_styling()
-
-## RADPAD by Procedure Type effect on response scale
-grid <- ref_grid(fit_rF)
-rg <- update(grid, tran = tran)
-em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
-c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
-data.frame(c1) |>
-  select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3,
+        caption = "Faculty RADPAD by Procedure Type Contrast on Box-Cox Scale") |>
   kable_styling()
 
 ## RADPAD main effect on transformed scale
 em2 <- emmeans(fit_rF, ~RADPAD)
-c2 <- contrast(em2, "revpairwise")
+c2 <- contrast(em2, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c2) |>
-  kable() |>
-  kable_styling()
-
-## RADPAD main effect on response scale
-em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
-c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
-data.frame(c3) |>
-  select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3, caption = "Faculty RADPAD Contrast on Box-Cox Scale") |>
   kable_styling()
 ```
 
 \newpage
 
-## TEE: GLS
+## TEE
+
+### Observed Difference in Median Dose
+
+```{r}
+rTee |>
+  group_by(Procedure_Type) |>
+  summarise(NODPAD = median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE),
+            RADPAD = median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE)) |>
+  mutate(Difference = RADPAD - NODPAD) |> 
+  mutate(Perecent = Difference/NODPAD*100) |>
+  kable(digits = 2, caption = "Median Dose (microSV) Statistics for TEE",
+        col.names = c("Procedure", "Median NOPAD", "Median RADPAD",
+                      "Difference", "Percent Change"))|>
+  kable_styling()
+```
+
+### GLS Model Analysis of Variance
 
 ```{r}
 ## fit OLS model
@@ -248,92 +288,107 @@ gls_fit2 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type  + Weight + Time,
 gls_fit3 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
                 data = rTee,
                 weights = varIdent(form = ~ 1 | RADPAD*Procedure_Type))
-aic_results <- AIC(gls_fit0, gls_fit1, gls_fit2, gls_fit3)
-
 ## identify best model using AIC criterion
-data.frame(aic_results) |>
-  kable() |>
-  kable_styling()
-## best model is gls_fit1 wit RADPAD unequal variance
+aic_results <- AIC(gls_fit0, gls_fit1, gls_fit2, gls_fit3)
+## best model is gls_fit1 with RADPAD unequal variance
 fit_rTee <- gls_fit1
 
+Anova(fit_rF, type = "III") |>
+  kable(digits = 3, caption = "TEE Analysis of Variance")
+```
+
+### Contrasts 
+
+```{r}
 ## RADPAD by Procedure Type effect on transformed scale
 em0 <- emmeans(fit_rTee, ~RADPAD|Procedure_Type)
-c0 <- contrast(em0, "revpairwise")
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c0) |>
-  kable(round = 3) |>
-  kable_styling()
-
-## RADPAD by Procedure Type effect on response scale
-grid <- ref_grid(fit_rTee)
-rg <- update(grid, tran = tran)
-em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
-c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
-data.frame(c1) |>
-  select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3,
+        caption = "TEE RADPAD by Procedure Type Contrast on Box-Cox Scale") |>
   kable_styling()
 
 ## RADPAD main effect on transformed scale
 em2 <- emmeans(fit_rTee, ~RADPAD)
-c2 <- contrast(em2, "revpairwise")
+c2 <- contrast(em2, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c2) |>
-  kable() |>
-  kable_styling()
-
-## RADPAD main effect on response scale
-em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
-c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
-data.frame(c3) |>
-  select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3, caption = "TEE RADPAD Contrast on Box-Cox Scale") |>
   kable_styling()
 ```
 
 \newpage
 
-## Anesthesia: Gamma GLM
+## Anesthesia
+
+### Observed Difference in Median Dose
+
+```{r}
+rA |>
+  group_by(Procedure_Type) |>
+  summarise(NODPAD = median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE),
+            RADPAD = median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE)) |>
+  mutate(Difference = RADPAD - NODPAD) |> 
+  mutate(Perecent = Difference/NODPAD*100) |>
+  kable(digits = 2, caption = "Median Dose (microSV) Statistics for Anesthesia",
+        col.names = c("Procedure", "Median NOPAD", "Median RADPAD",
+                      "Difference", "Percent Change"))|>
+  kable_styling()
+```
+
+### Gamma GLM Analysis of Variance
 
 ```{r}
 ## fit gamma GLM
-fit_A <- glm(Dose ~ RADPAD * Procedure_Type + Weight + Time,
+fit_rA <- glm(Dose ~ RADPAD * Procedure_Type + Weight + Time,
              family = Gamma(link = "log"),
              data = rA)
 
-## RADPAD by Procedure Type effect on transformed scale
-em0 <- emmeans(fit_A, ~RADPAD|Procedure_Type)
-c0 <- contrast(em0, "revpairwise")
+Anova(fit_rA, type = "III") |>
+  kable(digits = 3, caption = "Anesthesia Analysis of Variance")
+```
+
+### Contrasts 
+
+```{r}
+## RADPAD by Procedure Type effect on log scale
+em0 <- emmeans(fit_rA, ~RADPAD|Procedure_Type)
+c0 <- contrast(em0, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c0) |>
-  kable(round = 3) |>
+  kable(digits = 3,
+        caption = "Anesthesia RADPAD by Procedure Type Contrast on Log Scale") |>
   kable_styling()
 
-## RADPAD by Procedure Type effect on response scale
-grid <- ref_grid(fit_A)
-rg <- update(grid, tran = tran)
-em <- emmeans(regrid(rg, transform = "response"), ~RADPAD|Procedure_Type)
-c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, FALSE))
+## RADPAD by Procedure Type ratio
+em <- emmeans(fit_rA, type = "response", ~RADPAD|Procedure_Type)
+c1 <- contrast(em, method = "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c1) |>
   select(-df) |>
-  kable(round = 3) |>
-  kable_styling()
-
-## RADPAD main effect on transformed scale
-em2 <- emmeans(fit_A, ~RADPAD)
-c2 <- contrast(em2, "revpairwise")
-data.frame(c2) |>
-  kable() |>
-  kable_styling()
-
-## RADPAD main effect on response scale
-em3 <- emmeans(regrid(rg, transform = "response"), ~RADPAD)
-c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, FALSE))
-data.frame(c3) |>
-  select(-df) |>
-  kable(round = 3) |>
+  kable(digits = 3,
+        caption = "Anesthesia RADPAD by Procedure Type Contrast, Ratio of Geometric Means") |>
   kable_styling()
 ```
 
 \newpage
+
+```{r}
+## RADPAD main effect on log scale
+em2 <- emmeans(fit_rA, ~RADPAD)
+c2 <- contrast(em2, "revpairwise", infer = c(TRUE, TRUE))
+data.frame(c2) |>
+  kable(digits = 3, caption = "Anesthesia RADPAD Contrast on Log Scale") |>
+  kable_styling()
+
+## RADPAD main effect ratio
+em3 <- emmeans(fit_rA, type = "response", ~RADPAD)
+c3 <- contrast(em3, method = "revpairwise", infer = c(TRUE, TRUE))
+data.frame(c3) |>
+  select(-df) |>
+  kable(digits = 3,
+        caption = "Anesthesia RADPAD Contrast, Ratio of Geometric Means") |>
+  kable_styling()
+```
+
+\newpage 
 
 ## Resiudal Analysis
 
@@ -357,8 +412,6 @@ qqnorm(residuals(fit_rF, type = "pearson"))
 qqline(residuals(fit_rF, type = "pearson"))
 ```
 
-\newpage
-
 ### Tee
 
 ```{r}
@@ -372,12 +425,20 @@ qqline(residuals(fit_rTee, type = "pearson"))
 ## Anesthesia
 
 ```{r, out.width = "100%", out.height="100%"}
-plot(simulateResiduals(fit_A))
+plot(simulateResiduals(fit_rA))
 ```
+```{r,  out.width = "75%", out.height="75%"}
+plot(residuals(fit_rA, type = "deviance") ~ predict(fit_rA, type = "link"),
+     xlab = expression(hat(eta)), ylab = "deviance residuals",
+     main = "Fitted Values vs Deviance Residuals")
+```
+
 
 \newpage
 
 ## Numeric Summaries
+
+### Dose (microSV)
 
 ```{r}
 r |>
@@ -385,8 +446,62 @@ r |>
   summarise(Count = n(),
             Mean = mean(Dose),
             Median = median(Dose),
-            SD = sd(Dose), Min = min(Dose),
+            SD = sd(Dose),
+            Min = min(Dose),
             Max = max(Dose)) |>
   kable(digits = 3) |>
   kable_styling()
 ```
+
+$\space$
+
+### Fluoroscopic Time (minutes)
+
+```{r}
+r |>
+  group_by(Procedure_Type, RADPAD) |>
+  summarise(Mean = mean(Time),
+            Median = median(Time),
+            SD = sd(Time),
+            Min = min(Time),
+            Max = max(Time)) |>
+  kable(digits = 3) |>
+  kable_styling()
+```
+
+$\space$
+
+### Weight (kilograms)
+
+```{r}
+r |>
+  group_by(Procedure_Type, RADPAD) |>
+  summarise(Mean = mean(Weight),
+            Median = median(Weight),
+            SD = sd(Weight),
+            Min = min(Weight),
+            Max = max(Weight)) |>
+  kable(digits = 3) |>
+  kable_styling()
+```
+
+## Graphical Summaries
+
+### Fluoroscopic Time (minutes)
+
+```{r, out.width="100%", out.height="100%"}
+ggplot(r, aes(RADPAD, Time, fill = RADPAD)) +
+  geom_boxplot() +
+  facet_wrap(vars(Procedure_Type)) +
+  theme(legend.position="none")
+```
+
+### Weight (kilograms)
+
+```{r, out.width="100%", out.height="100%"}
+ggplot(r, aes(RADPAD, Weight, fill = RADPAD)) +
+  geom_boxplot() +
+  facet_wrap(vars(Procedure_Type)) +
+  theme(legend.position="none")
+```
+
