@@ -123,6 +123,27 @@ data.frame(c3) |>
   kable_styling()
 ```
 
+```{r}
+tib <- as_tibble(c0)
+tib$p.value <- round(tib$p.value, 3)
+
+# Create the bar plot
+plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightblue") +
+  geom_text(aes(label = if_else(p.value > .001, 
+                                paste("P =", p.value), 
+                                paste("P < 0.001"))), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, 
+            size = 3) +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = FALSE) 
+
+print(plt2)
+```
+
 \newpage
 
 ## Resident 2
@@ -176,6 +197,27 @@ c2 <- contrast(em2, "revpairwise", infer = c(TRUE, TRUE))
 data.frame(c2) |>
   kable(digits = 3, caption = "Resident 2 RADPAD Contrast on Box-Cox Scale") |>
   kable_styling()
+```
+
+```{r}
+tib <- as_tibble(c0)
+tib$p.value <- round(tib$p.value, 3)
+
+# Create the bar plot
+plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightblue") +
+  geom_text(aes(label = if_else(p.value > .001, 
+                                paste("P =", p.value), 
+                                paste("P < 0.001"))), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, 
+            size = 3) +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = FALSE) 
+
+print(plt2)
 ```
 
 \newpage
@@ -247,6 +289,27 @@ data.frame(c2) |>
   kable_styling()
 ```
 
+```{r}
+tib <- as_tibble(c0)
+tib$p.value <- round(tib$p.value, 3)
+
+# Create the bar plot
+plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightblue") +
+  geom_text(aes(label = if_else(p.value > .001, 
+                                paste("P =", p.value), 
+                                paste("P < 0.001"))), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, 
+            size = 3) +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = FALSE) 
+
+print(plt2)
+```
+
 \newpage
 
 ## TEE
@@ -316,6 +379,27 @@ data.frame(c2) |>
   kable_styling()
 ```
 
+```{r}
+tib <- as_tibble(c0)
+tib$p.value <- round(tib$p.value, 3)
+
+# Create the bar plot
+plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightblue") +
+  geom_text(aes(label = if_else(p.value > .001, 
+                                paste("P =", p.value), 
+                                paste("P < 0.001"))), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, 
+            size = 3) +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = FALSE) 
+
+print(plt2)
+```
+
 \newpage
 
 ## Anesthesia
@@ -359,6 +443,27 @@ data.frame(c0) |>
   kable_styling()
 ```
 
+```{r}
+tib <- as_tibble(c0)
+tib$p.value <- round(tib$p.value, 3)
+
+# Create the bar plot
+plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightblue") +
+  geom_text(aes(label = if_else(p.value > .001, 
+                                paste("P =", p.value), 
+                                paste("P < 0.001"))), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, 
+            size = 3) +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = FALSE)
+
+print(plt2)
+```
+
 \newpage
 
 ```{r}
@@ -369,6 +474,7 @@ data.frame(c2) |>
   kable(digits = 3, caption = "Anesthesia RADPAD Contrast on Log Scale") |>
   kable_styling()
 ```
+
 
 \newpage 
 
@@ -409,6 +515,7 @@ qqline(residuals(fit_rTee, type = "pearson"))
 ```{r, out.width = "100%", out.height="100%"}
 plot(simulateResiduals(fit_rA))
 ```
+
 ```{r,  out.width = "75%", out.height="75%"}
 plot(residuals(fit_rA, type = "deviance") ~ predict(fit_rA, type = "link"),
      xlab = expression(hat(eta)), ylab = "deviance residuals",
@@ -533,3 +640,375 @@ ggplot(r, aes(x = Procedure_Type, y = Dose, fill = RADPAD)) +
   theme_bw() +
   theme(plot.title = element_text(hjust = 0.5))
 ```
+## Resident 1 Median Plot
+
+```{r}
+#summarize the data
+tib <- r1 %>%
+  group_by(Procedure_Type) %>%
+  summarise(Count_NOPAD = sum(RADPAD == "N", na.rm = TRUE),
+            Count_RADPAD = sum(RADPAD == "Y", na.rm = TRUE),
+            NOPAD = round(median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE), 1),
+            RADPAD = round(median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE), 1),
+            Max = NOPAD) %>%
+  mutate(Difference = NOPAD - RADPAD) %>%mutate(Percent = round(-Difference / NOPAD * 100, 1))
+
+#convert the data frame to long format
+tib_long <- tib %>%
+  pivot_longer(cols = c("NOPAD", "RADPAD", "Difference"),
+               names_to = "Type",
+               values_to = "Value") %>%
+  mutate(Count = case_when(
+    Type == "NOPAD" ~ Count_NOPAD,
+    Type == "RADPAD" ~ Count_RADPAD,
+    TRUE ~ NA_real_)) %>%
+  select(-Count_NOPAD, -Count_RADPAD)
+
+#set the order for Procedure_Type and Type factors
+tib_long$Procedure_Type <- factor(tib_long$Procedure_Type, levels = c("PV Stent", "PMI", "PDA", "BPV"))
+tib_long$Type <- factor(tib_long$Type, levels = c("Difference", "RADPAD", "NOPAD"))
+
+#add numeric column of Procedure_Type for plotting
+tib_long$Procedure_Type_num <- as.numeric(tib_long$Procedure_Type)
+
+#create the plot
+plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_text(aes(label = Value), 
+            position = position_dodge(width = 0.9), 
+            hjust = 1.2,
+            vjust = .5, 
+            size = 3, 
+            color = "black") +
+  geom_text(aes(x = Max + 2, y = Procedure_Type, label = paste0(Percent, "%")), 
+            hjust = -0.3,
+            vjust = -0.9, 
+            size = 3, 
+            color = "black") +
+ geom_text(aes(x = - 2.5, y = Procedure_Type, label = ifelse(Type == "NOPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = -2.4,
+            size = 2.7,
+            color = "black") +
+  geom_text(aes(x = -2.5, y = Procedure_Type, label = ifelse(Type == "RADPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = 0.5,
+            size = 2.7,
+            color = "black") +
+  geom_segment(aes(x = Max + 2, xend = Max + 2, y = Procedure_Type_num, yend = Procedure_Type_num + 0.3), 
+               color = "black", size = 0.6, 
+               arrow = arrow(type = "closed", angle = 90, length = unit(0.1, "cm"), ends = "both")) +
+  scale_fill_manual(values = c("Difference" = "#FF9999", "RADPAD" = "#ADD8E6", "NOPAD" = "#C3D7A4"),
+                    labels = c("Difference" = "Difference", "RADPAD" = "Median Dose RADPAD", 
+                               "NOPAD" = "Median Dose NOPAD")) +
+  labs(x =  expression(paste(mu,"Sv")), y = NULL, fill = NULL) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  expand_limits(x = c(-4, max(tib_long$Value) + 5))
+
+print(plt1)
+```
+
+## Resident 2 Median Plot
+
+```{r}
+#summarize the data
+tib <- r2 %>%
+  group_by(Procedure_Type) %>%
+  summarise(Count_NOPAD = sum(RADPAD == "N", na.rm = TRUE),
+            Count_RADPAD = sum(RADPAD == "Y", na.rm = TRUE),
+            NOPAD = round(median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE), 1),
+            RADPAD = round(median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE), 1),
+            Max = NOPAD) %>%
+  mutate(Difference = NOPAD - RADPAD) %>%mutate(Percent = round(-Difference / NOPAD * 100, 1))
+
+#convert the data frame to long format
+tib_long <- tib %>%
+  pivot_longer(cols = c("NOPAD", "RADPAD", "Difference"),
+               names_to = "Type",
+               values_to = "Value") %>%
+  mutate(Count = case_when(
+    Type == "NOPAD" ~ Count_NOPAD,
+    Type == "RADPAD" ~ Count_RADPAD,
+    TRUE ~ NA_real_)) %>%
+  select(-Count_NOPAD, -Count_RADPAD)
+
+#set the order for Procedure_Type and Type factors
+tib_long$Procedure_Type <- factor(tib_long$Procedure_Type, levels = c("PV Stent", "PMI", "PDA", "BPV"))
+tib_long$Type <- factor(tib_long$Type, levels = c("Difference", "RADPAD", "NOPAD"))
+
+#add numeric column of Procedure_Type for plotting
+tib_long$Procedure_Type_num <- as.numeric(tib_long$Procedure_Type)
+
+#create the plot
+plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_text(aes(label = Value), 
+            position = position_dodge(width = 0.9), 
+            hjust = 1.2,
+            vjust = .5, 
+            size = 3, 
+            color = "black") +
+  geom_text(aes(x = Max + 0.5, y = Procedure_Type, label = paste0(Percent, "%")), 
+            hjust = -0.3,
+            vjust = -0.9, 
+            size = 3, 
+            color = "black") +
+ geom_text(aes(x = - 0.1, y = Procedure_Type, label = ifelse(Type == "NOPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = -2.4,
+            size = 2.7,
+            color = "black") +
+  geom_text(aes(x = -0.1, y = Procedure_Type, label = ifelse(Type == "RADPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = 0.5,
+            size = 2.7,
+            color = "black") +
+  geom_segment(aes(x = Max + 0.5, xend = Max + 0.5, y = Procedure_Type_num, yend = Procedure_Type_num + 0.3), 
+               color = "black", size = 0.6, 
+               arrow = arrow(type = "closed", angle = 90, length = unit(0.1, "cm"), ends = "both")) +
+  scale_fill_manual(values = c("Difference" = "#FF9999", "RADPAD" = "#ADD8E6", "NOPAD" = "#C3D7A4"),
+                    labels = c("Difference" = "Difference", "RADPAD" = "Median Dose RADPAD", 
+                               "NOPAD" = "Median Dose NOPAD")) +
+  labs(x =  expression(paste(mu,"Sv")), y = NULL, fill = NULL) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  expand_limits(x = c(-0.3, max(tib_long$Value) + 0.5))
+
+print(plt1)
+```
+## Faculty Median Plot
+
+```{r}
+#summarize the data
+tib <- rF %>%
+  group_by(Procedure_Type) %>%
+  summarise(Count_NOPAD = sum(RADPAD == "N", na.rm = TRUE),
+            Count_RADPAD = sum(RADPAD == "Y", na.rm = TRUE),
+            NOPAD = round(median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE), 1),
+            RADPAD = round(median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE), 1),
+            Max = NOPAD) %>%
+  mutate(Difference = NOPAD - RADPAD) %>%mutate(Percent = round(-Difference / NOPAD * 100, 1))
+
+#convert the data frame to long format
+tib_long <- tib %>%
+  pivot_longer(cols = c("NOPAD", "RADPAD", "Difference"),
+               names_to = "Type",
+               values_to = "Value") %>%
+  mutate(Count = case_when(
+    Type == "NOPAD" ~ Count_NOPAD,
+    Type == "RADPAD" ~ Count_RADPAD,
+    TRUE ~ NA_real_)) %>%
+  select(-Count_NOPAD, -Count_RADPAD)
+
+#set the order for Procedure_Type and Type factors
+tib_long$Procedure_Type <- factor(tib_long$Procedure_Type, levels = c("PV Stent", "PMI", "PDA", "BPV"))
+tib_long$Type <- factor(tib_long$Type, levels = c("Difference", "RADPAD", "NOPAD"))
+
+#add numeric column of Procedure_Type for plotting
+tib_long$Procedure_Type_num <- as.numeric(tib_long$Procedure_Type)
+
+#create the plot
+plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_text(aes(label = Value), 
+            position = position_dodge(width = 0.9), 
+            hjust = 1.2,
+            vjust = .5, 
+            size = 3, 
+            color = "black") +
+  geom_text(aes(x = Max + 0.2, y = Procedure_Type, label = paste0(Percent, "%")), 
+            hjust = -0.3,
+            vjust = -0.9, 
+            size = 3, 
+            color = "black") +
+ geom_text(aes(x = - 0.15, y = Procedure_Type, label = ifelse(Type == "NOPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = -2.4,
+            size = 2.7,
+            color = "black") +
+  geom_text(aes(x = -0.15, y = Procedure_Type, label = ifelse(Type == "RADPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = 0.5,
+            size = 2.7,
+            color = "black") +
+  geom_segment(aes(x = Max + 0.2, xend = Max + 0.2, y = Procedure_Type_num, yend = Procedure_Type_num + 0.3), 
+               color = "black", size = 0.6, 
+               arrow = arrow(type = "closed", angle = 90, length = unit(0.1, "cm"), ends = "both")) +
+  scale_fill_manual(values = c("Difference" = "#FF9999", "RADPAD" = "#ADD8E6", "NOPAD" = "#C3D7A4"),
+                    labels = c("Difference" = "Difference", "RADPAD" = "Median Dose RADPAD", 
+                               "NOPAD" = "Median Dose NOPAD")) +
+  labs(x =  expression(paste(mu,"Sv")), y = NULL, fill = NULL) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  expand_limits(x = c(-0.2, max(tib_long$Value) + 0.3))
+
+print(plt1)
+```
+## TEE Median Plot
+
+```{r}
+#summarize the data
+tib <- rTee %>%
+  group_by(Procedure_Type) %>%
+  summarise(Count_NOPAD = sum(RADPAD == "N", na.rm = TRUE),
+            Count_RADPAD = sum(RADPAD == "Y", na.rm = TRUE),
+            NOPAD = round(median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE), 1),
+            RADPAD = round(median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE), 1),
+            Max = NOPAD) %>%
+  mutate(Difference = NOPAD - RADPAD) %>%mutate(Percent = round(-Difference / NOPAD * 100, 1))
+
+#convert the data frame to long format
+tib_long <- tib %>%
+  pivot_longer(cols = c("NOPAD", "RADPAD", "Difference"),
+               names_to = "Type",
+               values_to = "Value") %>%
+  mutate(Count = case_when(
+    Type == "NOPAD" ~ Count_NOPAD,
+    Type == "RADPAD" ~ Count_RADPAD,
+    TRUE ~ NA_real_)) %>%
+  select(-Count_NOPAD, -Count_RADPAD)
+
+#set the order for Procedure_Type and Type factors
+tib_long$Procedure_Type <- factor(tib_long$Procedure_Type, levels = c("PV Stent", "PMI", "PDA", "BPV"))
+tib_long$Type <- factor(tib_long$Type, levels = c("Difference", "RADPAD", "NOPAD"))
+
+#add numeric column of Procedure_Type for plotting
+tib_long$Procedure_Type_num <- as.numeric(tib_long$Procedure_Type)
+
+#create the plot
+plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_text(aes(label = Value), 
+            position = position_dodge(width = 0.9), 
+            hjust = 1.2,
+            vjust = .5, 
+            size = 3, 
+            color = "black") +
+  geom_text(aes(x = Max + 2, y = Procedure_Type, label = paste0(Percent, "%")), 
+            hjust = -0.3,
+            vjust = -0.9, 
+            size = 3, 
+            color = "black") +
+ geom_text(aes(x = - 0.15, y = Procedure_Type, label = ifelse(Type == "NOPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = -2.4,
+            size = 2.7,
+            color = "black") +
+  geom_text(aes(x = -0.15, y = Procedure_Type, label = ifelse(Type == "RADPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = 0.5,
+            size = 2.7,
+            color = "black") +
+  geom_segment(aes(x = Max + 2, xend = Max + 2, y = Procedure_Type_num, yend = Procedure_Type_num + 0.3), 
+               color = "black", size = 0.6, 
+               arrow = arrow(type = "closed", angle = 90, length = unit(0.1, "cm"), ends = "both")) +
+  scale_fill_manual(values = c("Difference" = "#FF9999", "RADPAD" = "#ADD8E6", "NOPAD" = "#C3D7A4"),
+                    labels = c("Difference" = "Difference", "RADPAD" = "Median Dose RADPAD", 
+                               "NOPAD" = "Median Dose NOPAD")) +
+  labs(x =  expression(paste(mu,"Sv")), y = NULL, fill = NULL) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  expand_limits(x = c(-2, max(tib_long$Value) + 2.3))
+
+print(plt1)
+```
+## Anesthesia Median Plot
+
+```{r}
+#summarize the data
+tib <- rA %>%
+  group_by(Procedure_Type) %>%
+  summarise(Count_NOPAD = sum(RADPAD == "N", na.rm = TRUE),
+            Count_RADPAD = sum(RADPAD == "Y", na.rm = TRUE),
+            NOPAD = round(median(ifelse(RADPAD == "N", Dose, NA), na.rm = TRUE), 1),
+            RADPAD = round(median(ifelse(RADPAD == "Y", Dose, NA), na.rm = TRUE), 1),
+            Max = NOPAD) %>%
+  mutate(Difference = NOPAD - RADPAD) %>%mutate(Percent = round(-Difference / NOPAD * 100, 1))
+
+#convert the data frame to long format
+tib_long <- tib %>%
+  pivot_longer(cols = c("NOPAD", "RADPAD", "Difference"),
+               names_to = "Type",
+               values_to = "Value") %>%
+  mutate(Count = case_when(
+    Type == "NOPAD" ~ Count_NOPAD,
+    Type == "RADPAD" ~ Count_RADPAD,
+    TRUE ~ NA_real_)) %>%
+  select(-Count_NOPAD, -Count_RADPAD)
+
+#set the order for Procedure_Type and Type factors
+tib_long$Procedure_Type <- factor(tib_long$Procedure_Type, levels = c("PV Stent", "PMI", "PDA", "BPV"))
+tib_long$Type <- factor(tib_long$Type, levels = c("Difference", "RADPAD", "NOPAD"))
+
+#add numeric column of Procedure_Type for plotting
+tib_long$Procedure_Type_num <- as.numeric(tib_long$Procedure_Type)
+
+#create the plot
+plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_text(aes(label = Value), 
+            position = position_dodge(width = 0.9), 
+            hjust = 1.2,
+            vjust = .5, 
+            size = 3, 
+            color = "black") +
+  geom_text(aes(x = Max + 1, y = Procedure_Type, label = paste0(Percent, "%")), 
+            hjust = -0.3,
+            vjust = -0.9, 
+            size = 3, 
+            color = "black") +
+ geom_text(aes(x = - 1.7, y = Procedure_Type, label = ifelse(Type == "NOPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = -2.4,
+            size = 2.7,
+            color = "black") +
+  geom_text(aes(x = -1.7, y = Procedure_Type, label = ifelse(Type == "RADPAD", paste0("N = ", Count), "")),
+            hjust = 1,
+            vjust = 0.5,
+            size = 2.7,
+            color = "black") +
+  geom_segment(aes(x = Max + 1, xend = Max + 1, y = Procedure_Type_num, yend = Procedure_Type_num + 0.3), 
+               color = "black", size = 0.6, 
+               arrow = arrow(type = "closed", angle = 90, length = unit(0.1, "cm"), ends = "both")) +
+  scale_fill_manual(values = c("Difference" = "#FF9999", "RADPAD" = "#ADD8E6", "NOPAD" = "#C3D7A4"),
+                    labels = c("Difference" = "Difference", "RADPAD" = "Median Dose RADPAD", 
+                               "NOPAD" = "Median Dose NOPAD")) +
+  labs(x =  expression(paste(mu,"Sv")), y = NULL, fill = NULL) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  expand_limits(x = c(-2, max(tib_long$Value) + 5))
+
+print(plt1)
+```
+
+```{r}
+## fit OLS model
+fit <- lm(Dose ~ RADPAD * Procedure_Type + Weight + Time, data = rA)
+## get box cox transformation for Dose
+b <- MASS::boxcox(fit, plotit = FALSE)
+## make transformation
+tran <- make.tran("boxcox", b$x[which.max(b$y)])
+
+## fit GLS models under different variance structures with box cox transformation
+gls_fit0 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rA)
+gls_fit1 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rA,
+                weights = varIdent(form = ~ 1 | RADPAD))
+gls_fit2 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type  + Weight + Time,
+                data = rA,
+                weights = varIdent(form = ~ 1 | Procedure_Type))
+gls_fit3 <- gls(tran$linkfun(Dose) ~ RADPAD*Procedure_Type + Weight + Time,
+                data = rA,
+                weights = varIdent(form = ~ 1 | RADPAD*Procedure_Type))
+## identify best model using AIC criterion
+aic_results <- AIC(gls_fit0, gls_fit1, gls_fit2, gls_fit3)
+## best model is gls_fit1 with RADPAD unequal variance
+fit_rA <- gls_fit1
+
+plot(fit_rA)
+qqnorm(residuals(fit_rA, type = "pearson"))
+qqline(residuals(fit_rA, type = "pearson"))
+```
+
