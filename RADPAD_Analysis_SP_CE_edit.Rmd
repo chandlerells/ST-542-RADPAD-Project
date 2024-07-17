@@ -123,7 +123,7 @@ data.frame(c3) |>
   kable_styling()
 ```
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 tib <- as_tibble(c0)
 tib$p.value <- round(tib$p.value, 3)
 
@@ -136,7 +136,7 @@ plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
             position = position_dodge(width = 0.9), 
             vjust = -0.5, 
             size = 3) +
-  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  labs(x = NULL, y = expression(paste(, mu, "Sv (Log Scale)")), title = "RADPAD by Procedure Type Pairwise Contrast Estimates") +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5)) +
   guides(fill = FALSE) 
@@ -199,7 +199,7 @@ data.frame(c2) |>
   kable_styling()
 ```
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 tib <- as_tibble(c0)
 tib$p.value <- round(tib$p.value, 3)
 
@@ -212,7 +212,7 @@ plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
             position = position_dodge(width = 0.9), 
             vjust = -0.5, 
             size = 3) +
-  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scale)")), title = "RADPAD by Procedure Type Pairwise Contrast Estimates") +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5)) +
   guides(fill = FALSE) 
@@ -289,7 +289,7 @@ data.frame(c2) |>
   kable_styling()
 ```
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 tib <- as_tibble(c0)
 tib$p.value <- round(tib$p.value, 3)
 
@@ -302,7 +302,7 @@ plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
             position = position_dodge(width = 0.9), 
             vjust = -0.5, 
             size = 3) +
-  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scale)")), title = "RADPAD by Procedure Type Pairwise Contrast Estimates") +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5)) +
   guides(fill = FALSE) 
@@ -379,7 +379,7 @@ data.frame(c2) |>
   kable_styling()
 ```
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 tib <- as_tibble(c0)
 tib$p.value <- round(tib$p.value, 3)
 
@@ -392,7 +392,7 @@ plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
             position = position_dodge(width = 0.9), 
             vjust = -0.5, 
             size = 3) +
-  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scale)")), title = "RADPAD by Procedure Type Pairwise Contrast Estimates") +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5)) +
   guides(fill = FALSE) 
@@ -441,9 +441,16 @@ data.frame(c0) |>
   kable(digits = 3,
         caption = "Anesthesia RADPAD by Procedure Type Contrast on Log Scale") |>
   kable_styling()
+
+## RADPAD main effect on log scale
+em2 <- emmeans(fit_rA, ~RADPAD)
+c2 <- contrast(em2, "revpairwise", infer = c(TRUE, TRUE))
+data.frame(c2) |>
+  kable(digits = 3, caption = "Anesthesia RADPAD Contrast on Log Scale") |>
+  kable_styling()
 ```
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 tib <- as_tibble(c0)
 tib$p.value <- round(tib$p.value, 3)
 
@@ -456,23 +463,12 @@ plt2 <- ggplot(tib, aes(x = Procedure_Type, y = estimate)) +
             position = position_dodge(width = 0.9), 
             vjust = -0.5, 
             size = 3) +
-  labs(x = NULL, y = expression(paste(mu, "Sv (Box-Cox Scaled)")), title = "Pairwise Contrast Estimates") +
+  labs(x = NULL, y = expression(paste(mu, "Sv (Log Scale)")), title = "RADPAD by Procedure Type Pairwise Contrast Estimates") +
   theme_minimal() +
   theme(plot.title = element_text(hjust = 0.5)) +
   guides(fill = FALSE)
 
 print(plt2)
-```
-
-\newpage
-
-```{r}
-## RADPAD main effect on log scale
-em2 <- emmeans(fit_rA, ~RADPAD)
-c2 <- contrast(em2, "revpairwise", infer = c(TRUE, TRUE))
-data.frame(c2) |>
-  kable(digits = 3, caption = "Anesthesia RADPAD Contrast on Log Scale") |>
-  kable_styling()
 ```
 
 
@@ -500,7 +496,7 @@ qqnorm(residuals(fit_rF, type = "pearson"))
 qqline(residuals(fit_rF, type = "pearson"))
 ```
 
-### Tee
+### TEE
 
 ```{r}
 plot(fit_rTee)
@@ -521,7 +517,6 @@ plot(residuals(fit_rA, type = "deviance") ~ predict(fit_rA, type = "link"),
      xlab = expression(hat(eta)), ylab = "deviance residuals",
      main = "Fitted Values vs Deviance Residuals")
 ```
-
 
 \newpage
 
@@ -640,9 +635,10 @@ ggplot(r, aes(x = Procedure_Type, y = Dose, fill = RADPAD)) +
   theme_bw() +
   theme(plot.title = element_text(hjust = 0.5))
 ```
+
 ## Resident 1 Median Plot
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 #summarize the data
 tib <- r1 %>%
   group_by(Procedure_Type) %>%
@@ -711,7 +707,7 @@ print(plt1)
 
 ## Resident 2 Median Plot
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 #summarize the data
 tib <- r2 %>%
   group_by(Procedure_Type) %>%
@@ -777,9 +773,10 @@ plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
 
 print(plt1)
 ```
+
 ## Faculty Median Plot
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 #summarize the data
 tib <- rF %>%
   group_by(Procedure_Type) %>%
@@ -845,9 +842,10 @@ plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
 
 print(plt1)
 ```
+
 ## TEE Median Plot
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 #summarize the data
 tib <- rTee %>%
   group_by(Procedure_Type) %>%
@@ -913,9 +911,10 @@ plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
 
 print(plt1)
 ```
+
 ## Anesthesia Median Plot
 
-```{r}
+```{r, out.width = "100%", out.height="100%"}
 #summarize the data
 tib <- rA %>%
   group_by(Procedure_Type) %>%
@@ -982,7 +981,7 @@ plt1 <- ggplot(tib_long, aes(x = Value, y = Procedure_Type, fill = Type)) +
 print(plt1)
 ```
 
-```{r}
+```{r, include = FALSE}
 ## fit OLS model
 fit <- lm(Dose ~ RADPAD * Procedure_Type + Weight + Time, data = rA)
 ## get box cox transformation for Dose
